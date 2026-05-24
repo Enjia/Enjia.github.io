@@ -183,6 +183,16 @@ code {
   border-left: 3px solid var(--accent);
 }
 
+.figure-label {
+  margin: 0 0 0.35rem;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .inline-figure figcaption {
   display: grid;
   gap: 0.25rem;
@@ -476,6 +486,24 @@ code {
   background: rgba(255, 250, 253, 0.72);
   border: 1px solid var(--rule);
   border-radius: 0.35rem;
+}
+
+.artifact-rhythm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.4rem 0 0.85rem;
+}
+
+.artifact-rhythm span {
+  padding: 0.18rem 0.4rem;
+  color: var(--soft-ink);
+  background: rgba(238, 227, 247, 0.8);
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.03em;
+  text-transform: lowercase;
 }
 
 .artifact-prediction label {

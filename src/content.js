@@ -36,7 +36,7 @@ export const essays = [
     subtitle: 'A CUDA field guide to threads, memory, and synchronization',
     author: 'Mnemonic Medium Lab',
     deckDescription:
-      'A discovery-style CUDA essay about threads, memory, synchronization, and measurement. The goal is to build durable intuition through small predictions and visible failure modes.',
+      'A discovery-style CUDA essay and mnemonic atlas of invisible machines. The goal is to build durable intuition through small predictions, visible failure modes, and machine views that make hidden structure legible.',
     sections: [
       {
         type: 'paragraph',
@@ -102,9 +102,11 @@ export const essays = [
       },
       {
         type: 'artifact',
+        label: 'code lens + prediction',
         title: 'Artifact 1: vector add is small enough to inspect',
         caption:
           'Vector add is not interesting as an algorithm. It is useful because every thread-to-element mapping mistake is visible.',
+        unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
         prediction: {
           id: 'artifact.vector_add.launch_prediction',
           prompt:
@@ -114,7 +116,7 @@ export const essays = [
         tabs: [
           {
             kind: 'source',
-            label: 'Kernel sketch',
+            label: 'Source view',
             language: 'cpp',
             body: `__global__ void add(float* out, const float* a, const float* b, int n) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -125,7 +127,7 @@ export const essays = [
           },
           {
             kind: 'evidence',
-            label: 'Launch sketch',
+            label: 'Evidence view',
             language: 'cpp',
             body: `int threads = 256;
 int blocks = (n + threads - 1) / threads;
@@ -133,7 +135,7 @@ add<<<blocks, threads>>>(out, a, b, n);`
           },
           {
             kind: 'interpretation',
-            label: 'What to inspect',
+            label: 'Machine reading',
             language: 'text',
             body: 'ceil(1000/256)=4 blocks, so 1024 threads exist. Threads with global indices 1000..1023 exist only because the launch was rounded up; the bounds guard prevents them from touching arrays.'
           }
@@ -146,7 +148,8 @@ add<<<blocks, threads>>>(out, a, b, n);`
       },
       {
         type: 'reviewSet',
-        title: 'Thread, block, grid, index',
+        title: 'Memory trace: ownership and launch geometry',
+        label: 'memory trace',
         intro: 'These cards should become automatic before memory and synchronization enter the story.',
         feedback:
           'If this was missed, draw a row of blocks first, then draw thread indices inside one block. The global index is block offset plus local thread offset.',
@@ -326,9 +329,11 @@ add<<<blocks, threads>>>(out, a, b, n);`
       },
       {
         type: 'artifact',
+        label: 'code lens + prediction',
         title: 'Artifact 2: strided copy makes memory access visible',
         caption:
           'This artifact asks for a prediction before running. The exact GB/s is less important than the trend and the explanation.',
+        unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
         prediction: {
           id: 'artifact.strided_copy.bandwidth_prediction',
           prompt:
@@ -338,7 +343,7 @@ add<<<blocks, threads>>>(out, a, b, n);`
         tabs: [
           {
             kind: 'source',
-            label: 'Kernel sketch',
+            label: 'Source view',
             language: 'cpp',
             body: `__global__ void copy_stride(float* out, const float* in, int n, int stride) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -349,13 +354,13 @@ add<<<blocks, threads>>>(out, a, b, n);`
           },
           {
             kind: 'evidence',
-            label: 'Reference pattern',
+            label: 'Evidence view',
             language: 'text',
             body: 'This sketch keeps the same number of active threads and writes the same dense output range for every stride. Only the input address pattern changes: neighboring lanes read neighboring locations for stride=1 and increasingly separated locations for larger strides.'
           },
           {
             kind: 'interpretation',
-            label: 'Reference interpretation',
+            label: 'Machine reading',
             language: 'text',
             body: 'Stride 1 usually gives adjacent threads adjacent addresses. Large strides scatter a warp across memory, which tends to waste memory transaction bandwidth. Treat this as an address-pattern sketch: a production microbenchmark would also control modulo overhead, cache state, alignment, and problem size.'
           }
@@ -368,7 +373,8 @@ add<<<blocks, threads>>>(out, a, b, n);`
       },
       {
         type: 'reviewSet',
-        title: 'Coalescing basics',
+        title: 'Memory trace: warp address patterns',
+        label: 'memory trace',
         intro: 'These cards deliberately encode the same idea as words, address sequence, and debugging symptom.',
         feedback:
           'If this was forgotten, write the addresses for lanes 0, 1, 2, 3. Coalescing is easier to see as an address sequence than as a single-thread property.',
@@ -459,9 +465,51 @@ add<<<blocks, threads>>>(out, a, b, n);`
           'Once threads cooperate through shared memory, ordering matters. A thread may read a shared array element before another thread has written it unless the program establishes a block-level barrier.'
       },
       {
+        type: 'artifact',
+        label: 'code lens + prediction',
+        title: 'Artifact 3: broken reduction is a correctness microscope',
+        caption:
+          'A reduction is useful here because it fails when cooperation rules are vague. The point is not to optimize reduction yet; the point is to learn what can go wrong.',
+        unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
+        prediction: {
+          id: 'artifact.broken_reduction.race_prediction',
+          prompt:
+            'Before revealing the fix direction, identify where barriers are missing after the load and between producer-consumer phases.',
+          placeholder: 'Write the producer-consumer phases you see in shared memory.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'cpp',
+            body: `__shared__ float partial[256];
+int tid = threadIdx.x;
+partial[tid] = input[blockIdx.x * blockDim.x + tid];
+// Missing barriers after the load and between producer-consumer phases.
+for (int offset = blockDim.x / 2; offset > 0; offset /= 2) {
+  if (tid < offset) partial[tid] += partial[tid + offset];
+}
+if (tid == 0) output[blockIdx.x] = partial[0];`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'Where must ordering be established after the initial load? Which loop iterations produce values read by later iterations? Why might the bug appear nondeterministic?'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'A correct block reduction needs barriers after the initial load and between reduction phases where one step produces values read by the next. Not just one `__syncthreads()` at the top: until you intentionally switch to a warp-synchronous or otherwise optimized design, each block-level producer-consumer phase needs ordering.'
+          }
+        ]
+      },
+      {
         type: 'reviewSet',
-        title: 'Synchronization and races',
-        intro: 'The goal is to distinguish scope, ordering, and atomicity before reductions become complicated.',
+        title: 'Memory trace: barriers and producer-consumer phases',
+        label: 'memory trace',
+        intro: 'The goal is to distinguish scope, ordering, and atomicity after the race is visible.',
         feedback:
           'If this was missed, you may be mixing three ideas: scope tells who participates, ordering tells when reads are safe, and atomicity protects a shared update.',
         cards: [
@@ -504,45 +552,6 @@ add<<<blocks, threads>>>(out, a, b, n);`
             kind: 'integrating',
             prompt: 'How do `__syncthreads()` and atomic add solve different problems?',
             answer: '`__syncthreads()` orders threads in one block; atomic add protects concurrent updates to one memory location.'
-          }
-        ]
-      },
-      {
-        type: 'artifact',
-        title: 'Artifact 3: broken reduction is a correctness microscope',
-        caption:
-          'A reduction is useful here because it fails when cooperation rules are vague. The point is not to optimize reduction yet; the point is to learn what can go wrong.',
-        prediction: {
-          id: 'artifact.broken_reduction.race_prediction',
-          prompt:
-            'Before revealing the fix direction, identify where barriers are missing after the load and between producer-consumer phases.',
-          placeholder: 'Write the producer-consumer phases you see in shared memory.'
-        },
-        tabs: [
-          {
-            kind: 'source',
-            label: 'Broken sketch',
-            language: 'cpp',
-            body: `__shared__ float partial[256];
-int tid = threadIdx.x;
-partial[tid] = input[blockIdx.x * blockDim.x + tid];
-// Missing barriers after the load and between producer-consumer phases.
-for (int offset = blockDim.x / 2; offset > 0; offset /= 2) {
-  if (tid < offset) partial[tid] += partial[tid + offset];
-}
-if (tid == 0) output[blockIdx.x] = partial[0];`
-          },
-          {
-            kind: 'evidence',
-            label: 'Question',
-            language: 'text',
-            body: 'Where must ordering be established after the initial load? Which loop iterations produce values read by later iterations? Why might the bug appear nondeterministic?'
-          },
-          {
-            kind: 'interpretation',
-            label: 'Fix direction',
-            language: 'text',
-            body: 'A correct block reduction needs barriers after the initial load and between reduction phases where one step produces values read by the next. Not just one `__syncthreads()` at the top: until you intentionally switch to a warp-synchronous or otherwise optimized design, each block-level producer-consumer phase needs ordering.'
           }
         ]
       },
@@ -625,7 +634,7 @@ const cudaNarrativeInsertions = [
     ]
   },
   {
-    afterTitle: 'Thread, block, grid, index',
+    afterTitle: 'Memory trace: ownership and launch geometry',
     paragraphs: [
       'Once indexing is clear, the next question is what the hardware can do with all these threads. CUDA exposes threads because they are the unit the programmer reasons about, but the machine often schedules them in groups. That gap between the programming unit and the scheduling intuition is not a nuisance. It is where many performance explanations live.',
       'A single thread is too small a lens for performance. If one lane reads a float, you know almost nothing. If thirty-two neighboring lanes read thirty-two neighboring floats, you know something important: the memory system has a clean pattern to work with. Likewise, if neighboring lanes branch in different directions, you have learned something about the instruction stream. CUDA performance is frequently a story about neighborhoods, not individuals.',
@@ -665,7 +674,7 @@ const cudaNarrativeInsertions = [
     ]
   },
   {
-    afterTitle: 'Coalescing basics',
+    afterTitle: 'Memory trace: warp address patterns',
     paragraphs: [
       'Coalescing is satisfying because it turns invisible hardware behavior into something you can often sketch with pencil marks. Write lane numbers across a row. Under each lane, write the address it requests. If the addresses march forward compactly, the pattern is friendly. If they leap across memory, the pattern is suspicious. This is not the full architectural rulebook, but it is a good first instrument.',
       'The matrix case makes the idea concrete. In row-major storage, moving across a row touches adjacent memory; moving down a column jumps by the row stride. A warp that maps lanes across a row tends to have an easier time than a warp that maps lanes down a column. This is why layout and thread mapping become inseparable once performance matters.',
@@ -681,7 +690,7 @@ const cudaNarrativeInsertions = [
     ]
   },
   {
-    afterTitle: 'Synchronization and races',
+    afterTitle: 'Memory trace: barriers and producer-consumer phases',
     paragraphs: [
       'Synchronization bugs are unpleasant because they often look like ghosts. The code is deterministic as text, but the schedule is not a single tidy sequence. If one thread reads before another thread writes, the program may sometimes see yesterday’s value, sometimes today’s value, and sometimes a value that merely looks plausible.',
       'The most important distinction is scope. `__syncthreads()` is a meeting for one block. It is not a meeting for the whole grid. If you need every block to finish phase one before any block begins phase two, you usually need a different kernel launch, a cooperative-groups design, or another explicit mechanism. Treating a block barrier as a grid barrier is one of those mistakes that can survive small tests and fail under scale.',
@@ -711,6 +720,7 @@ const cudaInlineFigureInsertions = [
     afterTitle: 'Artifact 1: vector add is small enough to inspect',
     figure: {
       type: 'inlineFigure',
+      label: 'machine view',
       id: 'last-block-boundary',
       title: '1000 elements, 1024 launched threads',
       caption:
@@ -726,10 +736,11 @@ const cudaInlineFigureInsertions = [
     afterTitle: 'Artifact 2: strided copy makes memory access visible',
     figure: {
       type: 'inlineFigure',
+      label: 'machine view',
       id: 'warp-address-tape',
       title: 'A warp-shaped address tape',
       caption:
-        'Coalescing becomes easier to reason about when addresses are written under neighboring lanes.',
+        'This is the machine-facing reveal: source code asks for one element per lane, but the memory system sees a bundle of warp addresses.',
       rows: [
         ['lane', '0 1 2 3 4 5 6 7'],
         ['stride=1 reads', '0 1 2 3 4 5 6 7'],
@@ -740,9 +751,10 @@ const cudaInlineFigureInsertions = [
     }
   },
   {
-    afterTitle: 'Synchronization and races',
+    afterTitle: 'Artifact 3: broken reduction is a correctness microscope',
     figure: {
       type: 'inlineFigure',
+      label: 'machine view',
       id: 'barrier-timeline',
       title: 'The barrier is a time boundary',
       caption:
@@ -756,7 +768,38 @@ const cudaInlineFigureInsertions = [
   }
 ];
 
+const cudaPhenomenonInsertions = [
+  {
+    beforeTitle: 'Artifact 1: vector add is small enough to inspect',
+    paragraph: {
+      type: 'paragraph',
+      kicker: 'Mystery',
+      text:
+        'Why can a launch create real GPU threads that exist, execute instructions, and yet have no permission to touch a single array element? The first unit answers that question by making ownership visible.'
+    }
+  },
+  {
+    beforeTitle: 'Artifact 2: strided copy makes memory access visible',
+    paragraph: {
+      type: 'paragraph',
+      kicker: 'Mystery',
+      text:
+        'Two kernels can both copy `n` floats and still feel as though they are running on different hardware. The source-level difference is tiny; the machine-level neighborhood it creates is not.'
+    }
+  },
+  {
+    beforeTitle: 'Artifact 3: broken reduction is a correctness microscope',
+    paragraph: {
+      type: 'paragraph',
+      kicker: 'Mystery',
+      text:
+        'A reduction can look deterministic in source code and still fail because time has not been structured. The interesting question is not whether the code uses shared memory, but where the program has actually declared a safe moment to read it.'
+    }
+  }
+];
+
 enrichPrimaryEssayNarrative();
+addCudaPhenomena();
 addCudaInlineFigures();
 
 function enrichPrimaryEssayNarrative() {
@@ -777,6 +820,19 @@ function enrichPrimaryEssayNarrative() {
   }
 
   essay._narrativeExpanded = true;
+}
+
+function addCudaPhenomena() {
+  const essay = essays.find((item) => item.slug === primaryEssaySlug);
+  if (!essay || essay._phenomenaAdded) return;
+
+  for (const insertion of cudaPhenomenonInsertions) {
+    const index = essay.sections.findIndex((section) => section.title === insertion.beforeTitle);
+    if (index === -1) continue;
+    essay.sections.splice(index, 0, insertion.paragraph);
+  }
+
+  essay._phenomenaAdded = true;
 }
 
 function addCudaInlineFigures() {

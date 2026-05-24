@@ -163,7 +163,7 @@ function renderReviewSet(section) {
   return `
     <section class="review-set" data-review-set>
       <div class="review-set-header">
-        <p class="review-label">remember</p>
+        <p class="review-label">${escapeHtml(section.label ?? 'remember')}</p>
         <h2>${escapeHtml(section.title)}</h2>
         <p>${escapeHtml(section.intro)}</p>
       </div>
@@ -178,6 +178,7 @@ function renderReviewSet(section) {
 function renderInlineFigure(section) {
   return `
     <figure class="inline-figure" id="${escapeHtml(section.id)}">
+      ${section.label ? `<p class="figure-label">${escapeHtml(section.label)}</p>` : ''}
       <figcaption>
         <strong>${escapeHtml(section.title)}</strong>
         <span>${formatInline(section.caption)}</span>
@@ -225,10 +226,17 @@ function renderArtifact(section) {
   return `
     <figure class="artifact" data-artifact data-prediction-id="${escapeHtml(section.prediction.id)}">
       <figcaption>
-        <span>artifact</span>
+        <span>${escapeHtml(section.label ?? 'artifact')}</span>
         <strong>${escapeHtml(section.title)}</strong>
         <em>${escapeHtml(section.caption)}</em>
       </figcaption>
+      ${
+        section.unitPattern
+          ? `<div class="artifact-rhythm">${section.unitPattern
+              .map((step) => `<span>${escapeHtml(step)}</span>`)
+              .join('')}</div>`
+          : ''
+      }
       <div class="artifact-prediction">
         <label>
           <span>Predict before evidence</span>
