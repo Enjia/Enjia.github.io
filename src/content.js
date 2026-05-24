@@ -647,7 +647,8 @@ const cudaNarrativeInsertions = [
     paragraphs: [
       'Bounds guards have a reputation as boilerplate, but boilerplate is exactly what should become fluent. If you have to stop and re-derive why `i < n` is there every time, you are spending attention on the wrong layer. The guard should become a small invariant you can trust while thinking about deeper behavior.',
       'The hidden danger is that missing guards may fail politely. A CPU program with an out-of-bounds bug may crash in a way that feels direct. A GPU kernel can instead corrupt a neighboring buffer, produce a plausible number, or fail only at certain input sizes. This is why the final partial block is not a corner case to handle later; it is the test of whether you understand the launch geometry at all.',
-      'Notice the distinction between a guard and an algorithmic condition. `i < n` says whether a thread corresponds to a valid element. `keep[i]` or `a[i] > 0` says whether the valid element should participate in the algorithm. Mixing those two ideas is a common way to write kernels that are locally readable but globally fragile.'
+      'Notice the distinction between a guard and an algorithmic condition. `i < n` says whether a thread corresponds to a valid element. `keep[i]` or `a[i] > 0` says whether the valid element should participate in the algorithm. Mixing those two ideas is a common way to write kernels that are locally readable but globally fragile.',
+      'You can now read a guard as a legality boundary, not just as defensive boilerplate. It marks the edge where a launched thread stops being merely real and starts being permitted to touch memory.'
     ]
   },
   {
@@ -655,7 +656,8 @@ const cudaNarrativeInsertions = [
     paragraphs: [
       'The warp is where the essay starts to become less like ordinary programming. In ordinary scalar code, a branch is a private choice made by one control flow. In CUDA, a branch can become a group event. If different lanes in a warp want different paths, the hardware still has to issue instructions in a way that respects those choices. The result is not usually a correctness bug, but it can be a performance tax.',
       'Do not turn this into superstition. Branches are not poison. A branch that splits whole blocks may be cheap enough. A branch that is rarely executed may not matter. A branch whose cost is hidden behind memory latency may not dominate. The useful habit is narrower: when performance looks odd, ask whether neighboring lanes are still doing the same kind of work at the same time.',
-      'This idea prepares us for coalescing. Divergence asks whether neighboring lanes take neighboring instruction paths. Coalescing asks whether neighboring lanes touch neighboring addresses. The two topics feel different in code, but they share a visual habit: stop staring at one lane and draw the warp.'
+      'This idea prepares us for coalescing. Divergence asks whether neighboring lanes take neighboring instruction paths. Coalescing asks whether neighboring lanes touch neighboring addresses. The two topics feel different in code, but they share a visual habit: stop staring at one lane and draw the warp.',
+      'You can now inspect a branch as a neighborhood event, not just a private choice of one thread. The machine cost depends on whether nearby lanes stay together or split apart.'
     ]
   },
   {
@@ -663,7 +665,8 @@ const cudaNarrativeInsertions = [
     paragraphs: [
       'Memory hierarchy is where many CUDA tutorials become a list of storage names. That list is not the point. The point is distance, visibility, and reuse. Registers are close and private. Shared memory is close and block-local. Global memory is large and visible, but comparatively far away. You should read every storage choice as a claim about who needs the data and how often it will be reused.',
       'A useful mental image is a workshop. Registers are the tools in one worker’s hands. Shared memory is the workbench shared by one small team. Global memory is the warehouse. Walking to the warehouse for every screw is legal, but if the team will use the same screws many times, bringing a box to the bench changes the work. That is the story behind many tiled kernels.',
-      'The local memory name is an especially good warning that vocabulary can mislead. Local sounds close, but in CUDA it means local to a thread in the programming model, not necessarily stored in fast nearby hardware. If too many per-thread values exceed register capacity, spills can make a kernel slower in ways that surprise people who only read variable scopes.'
+      'The local memory name is an especially good warning that vocabulary can mislead. Local sounds close, but in CUDA it means local to a thread in the programming model, not necessarily stored in fast nearby hardware. If too many per-thread values exceed register capacity, spills can make a kernel slower in ways that surprise people who only read variable scopes.',
+      'You can now read a storage choice as a claim about who needs the data, how far it travels, and whether reuse can justify bringing it closer.'
     ]
   },
   {
@@ -688,7 +691,8 @@ const cudaNarrativeInsertions = [
     paragraphs: [
       'Shared memory is the first CUDA feature that feels like a small social contract. Threads in a block agree to use a common scratchpad. Some threads put data there; other threads read it; together they avoid repeated trips to global memory. But a social contract needs rules. Who participates? Only the block. How long does the scratchpad live? For the block’s execution. When is it safe to read? Only after the relevant writes are complete.',
       'This is why shared memory appears together with synchronization in so many kernels. The memory space gives threads a place to cooperate; the barrier gives them a moment at which cooperation becomes well-defined. Without the barrier, the code may look like a team but behave like a crowd entering a room through different doors at different times.',
-      'The next essay on matrix multiplication will make this tangible. A block will load a tile of A and a tile of B, then reuse those tiles for many multiply-adds. The performance payoff comes from reuse. The correctness condition comes from synchronization. The resource tradeoff comes from the limited size of the shared scratchpad and registers.'
+      'The next essay on matrix multiplication will make this tangible. A block will load a tile of A and a tile of B, then reuse those tiles for many multiply-adds. The performance payoff comes from reuse. The correctness condition comes from synchronization. The resource tradeoff comes from the limited size of the shared scratchpad and registers.',
+      'You can now read shared memory as a local data-movement bargain: more coordination and limited on-chip space in exchange for shorter, more reusable paths through the machine.'
     ]
   },
   {
@@ -770,6 +774,24 @@ const cudaInlineFigureInsertions = [
         ['phase 2', 'threads read neighbor values']
       ]
     }
+  },
+  {
+    afterTitle: 'Measurement discipline',
+    figure: {
+      type: 'inlineFigure',
+      label: 'evidence',
+      id: 'measurement-receipt',
+      title: 'A benchmark needs a receipt',
+      caption:
+        'A performance claim becomes interpretable only when the timed region, hardware, and synchronization story travel with it.',
+      rows: [
+        ['GPU + software', 'device model, toolkit, driver'],
+        ['problem shape', 'input size, data type, layout'],
+        ['timed region', 'what is inside the timer'],
+        ['ordering', 'CUDA events or explicit synchronization'],
+        ['stability', 'warmup, repeats, profiler context']
+      ]
+    }
   }
 ];
 
@@ -799,6 +821,24 @@ const cudaPhenomenonInsertions = [
       kicker: 'Mystery',
       text:
         'A reduction can look deterministic in source code and still fail because time has not been structured. The interesting question is not whether the code uses shared memory, but where the program has actually declared a safe moment to read it.'
+    }
+  },
+  {
+    beforeTitle: 'Shared memory scope',
+    paragraph: {
+      type: 'paragraph',
+      kicker: 'Mystery',
+      text:
+        'Why can copying unrelated per-thread values into shared memory make a kernel strictly busier, while staging one reused block-local tile can make it meaningfully faster? The name `shared memory` is not the explanation. The explanation is whether a block is actually creating reusable local traffic rather than paying coordination overhead for private data.'
+    }
+  },
+  {
+    beforeTitle: 'Measurement discipline',
+    paragraph: {
+      type: 'paragraph',
+      kicker: 'Mystery',
+      text:
+        'Why can two performance claims conflict when no arithmetic changed? Because timing numbers can disagree even when no arithmetic changed. Often the source code is not the variable at all. The benchmark receipt changed: hardware, warmup, synchronization, timed region, or input size. Performance stories diverge when that receipt goes missing.'
     }
   }
 ];
