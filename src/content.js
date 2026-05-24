@@ -613,6 +613,462 @@ if (tid == 0) output[blockIdx.x] = partial[0];`
           'This essay stops before matrix multiplication on purpose. The next essay can now use these ideas without introducing them all at once: a block owns a C tile, threads cooperatively load A and B tiles, barriers make the shared-memory reuse correct, and benchmark evidence tells us whether the optimization paid off.'
       }
     ]
+  },
+  {
+    slug: 'matmul',
+    title: 'The Tile Loom',
+    subtitle: 'A CUDA essay about reuse, shared memory, and matrix multiplication',
+    author: 'Mnemonic Medium Lab',
+    deckDescription:
+      'A discovery-style matmul essay about reuse, shared memory, and tile-shaped thinking. The goal is to make fast kernels feel less like folklore and more like visible data movement.',
+    sections: [
+      {
+        type: 'paragraph',
+        kicker: 'Opening question',
+        text:
+          'Naive matmul can reread the same values so many times that the arithmetic is no longer the whole story. One thread computes one output element, which sounds tidy. But across a block, neighboring threads may keep asking global memory for overlapping pieces of the same row of A and the same column of B.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'That is why tiled matmul feels dramatic the first time it clicks. The flop count of matrix multiplication did not change. What changed is the path the data takes through the machine. Once a block cooperatively brings one tile closer, many multiply-adds can happen before those values need to travel again.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'This essay stays on one line of explanation. We will start from the repeated traffic inside naive matmul, then ask what one block should own, what it should stage, when barriers are required, and why tile size is a resource negotiation rather than a magic constant.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'Keep four questions nearby as you read. Which output tile does this block own? Which A and B values are being reread? Which of those values are worth staging in shared memory? At what moment is it safe for the next tile phase to overwrite the old one?'
+      },
+      {
+        type: 'paragraph',
+        kicker: 'Mystery',
+        text:
+          'If naive matmul already computes the right arithmetic, where does the big speed gap come from? The first answer is not tensor cores or instruction count. It is that many threads keep taking long trips for values that their neighbors also need.'
+      },
+      {
+        type: 'artifact',
+        label: 'code lens + prediction',
+        title: 'Artifact 1: naive matmul rereads the same inputs',
+        caption:
+          'The code is mathematically fine. The interesting question is how much traffic it causes when many threads in one block work on neighboring outputs.',
+        unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
+        prediction: {
+          id: 'artifact.matmul_naive.reuse_prediction',
+          prompt:
+            'Suppose one 16x16 block computes a 16x16 tile of C. For one fixed k, how many threads may need the same `A[row, k]` value, and how many may need the same `B[k, col]` value?',
+          placeholder: 'Write the reuse count you expect inside one output tile before revealing the reference reading.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'cpp',
+            body: `__global__ void matmul_naive(float* C, const float* A, const float* B, int M, int N, int K) {
+  int row = blockIdx.y * blockDim.y + threadIdx.y;
+  int col = blockIdx.x * blockDim.x + threadIdx.x;
+  if (row < M && col < N) {
+    float acc = 0.0f;
+    for (int k = 0; k < K; ++k) {
+      acc += A[row * K + k] * B[k * N + col];
+    }
+    C[row * N + col] = acc;
+  }
+}`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'Inside one 16x16 C tile and one fixed k, threads in the same output row all need the same A[row, k], while threads in the same output column all need the same B[k, col]. Naive code can therefore reread the same A value up to 16 times across columns and the same B value up to 16 times across rows.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'The arithmetic loop is not the whole story. Naive matmul can make a block ask global memory for overlapping data again and again. That repeated traffic is the opening mystery tiling is meant to resolve.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'machine view',
+        id: 'matmul-reuse-accounting',
+        title: 'One fixed k, many repeated requests',
+        caption:
+          'The point is not the exact hardware transaction count yet. The point is that the same A and B values can be needed by many neighboring threads in the same output tile.',
+        rows: [
+          ['one A[row, k]', 'needed by up to 16 threads across one C-tile row'],
+          ['one B[k, col]', 'needed by up to 16 threads across one C-tile column'],
+          ['naive effect', 'global memory may serve overlapping requests repeatedly'],
+          ['tiling motive', 'load once per tile phase, reuse many times inside the block']
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'The first useful lens is to stop admiring the triple loop and start auditing traffic. The kernel is no longer just “one thread computes one dot product.” It is also a machine that chooses how often the same input values travel from global memory to the threads that need them.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Memory trace: repeated traffic in naive matmul',
+        label: 'memory trace',
+        intro: 'These cards compress the repeated-traffic story before any shared-memory code appears.',
+        feedback:
+          'If this felt fuzzy, freeze one output tile and one fixed k. Then ask which threads share the same A value and which share the same B value.',
+        cards: [
+          {
+            id: 'matmul.naive.one_thread_one_c',
+            prompt: 'In the simplest CUDA matmul, one thread usually computes one what?',
+            answer: 'One output element of C, usually one `C[row, col]` accumulator.'
+          },
+          {
+            id: 'matmul.naive.shared_a_value',
+            prompt: 'Inside one output tile and one fixed k, which neighboring threads can need the same `A[row, k]` value?',
+            answer: 'Threads in the same output row but different output columns can need the same `A[row, k]`.'
+          },
+          {
+            id: 'matmul.naive.shared_b_value',
+            prompt: 'Inside one output tile and one fixed k, which neighboring threads can need the same `B[k, col]` value?',
+            answer: 'Threads in the same output column but different output rows can need the same `B[k, col]`.'
+          },
+          {
+            id: 'matmul.naive.transfer_overlap',
+            kind: 'transfer',
+            prompt: 'If neighboring threads compute neighboring columns of the same output row, which matrix is the obvious overlap candidate for one fixed k?',
+            answer: 'A is the obvious overlap candidate, because those threads share the same output row and therefore the same `A[row, k]` value.'
+          },
+          {
+            id: 'matmul.naive.debug_traffic',
+            kind: 'debugging',
+            prompt: 'A naive matmul is correct but bandwidth-heavy. Before changing arithmetic, what traffic issue should you suspect?',
+            answer: 'Repeated global-memory loads of A and B values that many neighboring threads need simultaneously.'
+          },
+          {
+            id: 'matmul.naive.integrating_rereads',
+            kind: 'integrating',
+            prompt: 'Why is “one thread computes one dot product” an incomplete performance explanation?',
+            answer: 'Because performance also depends on how much overlapping input traffic the whole block generates while those threads compute their dot products.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now read naive matmul as a repeated-traffic machine, not just as a triple loop. That is the descent point where tiling becomes necessary rather than ornamental.'
+      },
+      {
+        type: 'paragraph',
+        kicker: 'Mystery',
+        text:
+          'Once repeated traffic is the problem, what exactly should one block own? Tiling starts by making one block responsible for one tile of C, then deriving which slice of A and which slice of B that ownership implies.'
+      },
+      {
+        type: 'artifact',
+        label: 'code lens + prediction',
+        title: 'Artifact 2: one block can own one C tile',
+        caption:
+          'Ownership comes first. Shared-memory staging only makes sense after the block knows which output tile it is responsible for producing.',
+        unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
+        prediction: {
+          id: 'artifact.matmul_tile.ownership_prediction',
+          prompt:
+            'For block `(by, bx)` computing a `BM x BN` tile of C in the first `BK` phase, which slice of A and which slice of B must the block bring closer?',
+          placeholder: 'Name the C tile, the matching A rows/k-range, and the matching B k-range/columns before revealing the reference reading.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'cpp',
+            body: `constexpr int BM = 16;
+constexpr int BN = 16;
+constexpr int BK = 16;
+
+int block_row = blockIdx.y * BM;
+int block_col = blockIdx.x * BN;
+int row = block_row + threadIdx.y;
+int col = block_col + threadIdx.x;`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'If the block owns `C[block_row : block_row + BM, block_col : block_col + BN]`, then for the first phase it needs `A[block_row : block_row + BM, 0 : BK]` and `B[0 : BK, block_col : block_col + BN]`. Later phases advance the k-slice while the C tile ownership stays fixed.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'A block can turn repeated long trips into a smaller number of shared trips. Ownership of one C tile determines the exact A rows and B columns that are worth staging for one k-phase.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'machine view',
+        id: 'ctile-ownership-map',
+        title: 'Owning one C tile determines the input slices',
+        caption:
+          'The block does not load “some shared memory.” It loads the precise A and B slices needed to update its current C tile for one k-range.',
+        rows: [
+          ['block owns', 'C[block_row : block_row + BM, block_col : block_col + BN]'],
+          ['A slice for one phase', 'A[block_row : block_row + BM, tile_k : tile_k + BK]'],
+          ['B slice for one phase', 'B[tile_k : tile_k + BK, block_col : block_col + BN]'],
+          ['what stays fixed', 'the C tile ownership'],
+          ['what advances', 'the k-range across phases']
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'The key simplification is geometric. The block no longer sees the whole matrix multiply. It sees one output tile and a sequence of input tile pairs that must flow through it. A block can turn repeated long trips into a smaller number of shared trips.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Memory trace: C-tile ownership',
+        label: 'memory trace',
+        intro: 'These cards make tile ownership explicit before we talk about synchronization.',
+        feedback:
+          'If this felt slippery, freeze one block. First name its C tile. Then ask which rows of A and which columns of B are relevant for the current k phase.',
+        cards: [
+          {
+            id: 'matmul.tile.block_owns_ctile',
+            prompt: 'In a tiled CUDA matmul, what does a block usually own first: one C tile, one full row of C, or the whole matrix?',
+            answer: 'One tile of C.'
+          },
+          {
+            id: 'matmul.tile.a_slice',
+            prompt: 'If a block owns one C tile for the current k phase, what A slice does it need?',
+            answer: 'The rows that match the C tile and the current k-range for that phase.'
+          },
+          {
+            id: 'matmul.tile.b_slice',
+            prompt: 'If a block owns one C tile for the current k phase, what B slice does it need?',
+            answer: 'The current k-range and the columns that match the C tile.'
+          },
+          {
+            id: 'matmul.tile.transfer_shift_right',
+            kind: 'transfer',
+            prompt: 'If the block moves one tile to the right in C while keeping the same k phase, which input slice changes most obviously?',
+            answer: 'The B slice changes columns to match the new C tile, while the A rows for that block row remain the same for that phase.'
+          },
+          {
+            id: 'matmul.tile.integrating_geometry',
+            kind: 'integrating',
+            prompt: 'Why is tile ownership a better starting point than shared-memory syntax?',
+            answer: 'Because ownership tells you which output region the block must update and therefore exactly which A and B data are worth staging.'
+          }
+        ]
+      },
+      {
+        type: 'reviewSet',
+        title: 'Shared staging and reuse',
+        intro: 'Now connect ownership to storage choice: which values deserve shorter travel paths?',
+        feedback:
+          'If this was missed, ask whether a value is reused by many threads in the block. Shared memory helps only when the block is actually creating local reuse or a cleaner access path.',
+        cards: [
+          {
+            id: 'matmul.shared.why_stage_tiles',
+            prompt: 'Why stage A and B tiles in shared memory during tiled matmul?',
+            answer: 'Because many threads in the block reuse those tile values across many multiply-adds, so loading once into shared memory can replace many global loads.'
+          },
+          {
+            id: 'matmul.shared.accumulator_register',
+            prompt: 'Where does each thread usually keep its partial C accumulator while iterating through tile phases?',
+            answer: 'In registers.'
+          },
+          {
+            id: 'matmul.shared.not_all_values',
+            prompt: 'Why is putting arbitrary per-thread temporaries into shared memory not automatically a good idea?',
+            answer: 'Shared memory is useful for block-level reuse or improved access structure, not for values that stay private and are used once.'
+          },
+          {
+            id: 'matmul.shared.transfer_single_use',
+            kind: 'transfer',
+            prompt: 'If a value is used once by one thread and never by neighbors, should shared memory be your first choice?',
+            answer: 'No. That value is a better register candidate if resources allow, because shared memory adds coordination overhead without block-level reuse.'
+          },
+          {
+            id: 'matmul.shared.debug_no_gain',
+            kind: 'debugging',
+            prompt: 'A tiled kernel adds shared memory but barely speeds up. Name one structural reason to suspect before micro-tuning.',
+            answer: 'The staged values may not actually be reused enough to justify the synchronization and shared-memory resource cost.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now read a block as a reuse agreement: it owns one C tile, stages the matching A and B tile slices, and spends scarce on-chip memory only when the shorter path pays for itself.'
+      },
+      {
+        type: 'paragraph',
+        kicker: 'Mystery',
+        text:
+          'Shared memory explains where the data sits. It does not yet explain when it is safe to reuse or overwrite it. The tiled loop only becomes correct when each phase has a clear handoff boundary.'
+      },
+      {
+        type: 'artifact',
+        label: 'code lens + prediction',
+        title: 'Artifact 3: tiled reuse needs two barriers',
+        caption:
+          'The first barrier makes the tile readable. The second barrier makes the next overwrite legal. The point is the repeating phase structure, not the exact micro-optimization yet.',
+        unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
+        prediction: {
+          id: 'artifact.matmul_sync.two_barriers_prediction',
+          prompt:
+            'Why is one barrier after the tile load not always enough? Identify what could be overwritten too early when the loop advances to the next k phase.',
+          placeholder: 'Write which reads are still in flight and which shared arrays may be overwritten before reveal.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'cpp',
+            body: `for (int tile_k = 0; tile_k < K; tile_k += BK) {
+  As[threadIdx.y][threadIdx.x] = A[(block_row + threadIdx.y) * K + (tile_k + threadIdx.x)];
+  Bs[threadIdx.y][threadIdx.x] = B[(tile_k + threadIdx.y) * N + (block_col + threadIdx.x)];
+  __syncthreads();
+
+  for (int kk = 0; kk < BK; ++kk) {
+    acc += As[threadIdx.y][kk] * Bs[kk][threadIdx.x];
+  }
+
+  // Missing barrier before the next phase overwrites As and Bs.
+}`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'The first barrier orders producers before consumers read the tile. But when the loop advances, some threads may still be reading the current tile while others are ready to overwrite `As` and `Bs` with the next phase. The phase handoff itself also needs ordering.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'Tiled reuse is a repeating producer-consumer pipeline: load, make readable, compute, make overwrite-safe, then load again. The second barrier is not decorative. It protects the handoff between tile phases.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'machine view',
+        id: 'tile-phase-timeline',
+        title: 'Each tile phase has two boundaries',
+        caption:
+          'One boundary protects the first read of the tile. The other protects the first overwrite by the next phase.',
+        rows: [
+          ['phase 1 load', 'threads write As and Bs for tile_k'],
+          ['barrier 1', 'the tile becomes readable'],
+          ['phase 1 compute', 'threads consume As and Bs across kk'],
+          ['barrier 2', 'the tile becomes overwrite-safe'],
+          ['phase 2 load', 'the next k-slice can replace As and Bs']
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'This is the moment where tiled matmul stops looking like magic and starts looking mechanical. The kernel is a little loom: load one pattern into the block, use it many times, then do not touch the next pattern until the old one has been completely consumed.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Memory trace: tiled reuse and two barriers',
+        label: 'memory trace',
+        intro: 'These cards stabilize the phase structure before we talk about tile size and performance evidence.',
+        feedback:
+          'If this felt vague, separate the two jobs. Barrier one makes the just-loaded tile readable. Barrier two makes the current tile overwrite-safe before the next phase starts writing.',
+        cards: [
+          {
+            id: 'matmul.sync.first_barrier',
+            prompt: 'What does the first barrier after loading `As` and `Bs` protect?',
+            answer: 'It ensures the block has finished writing the current tile before threads read from it.'
+          },
+          {
+            id: 'matmul.sync.second_barrier',
+            prompt: 'What does the second barrier before the next tile load protect?',
+            answer: 'It ensures no thread is still reading the current shared-memory tile when the next phase begins overwriting it.'
+          },
+          {
+            id: 'matmul.sync.scope',
+            prompt: 'The tiled matmul barriers coordinate which scope: one thread, one block, or the whole grid?',
+            answer: 'One block.'
+          },
+          {
+            id: 'matmul.sync.transfer_neighbor_tile',
+            kind: 'transfer',
+            prompt: 'If one thread may still read `As[ty][kk]` while another starts storing the next phase into `As[ty][tx]`, what class of bug should you suspect?',
+            answer: 'A producer-consumer ordering bug caused by a missing or misplaced block-level barrier between tile phases.'
+          },
+          {
+            id: 'matmul.sync.integrating_pipeline',
+            kind: 'integrating',
+            prompt: 'Why is tiled matmul better read as a repeating phase pipeline than as one long loop?',
+            answer: 'Because correctness and performance both depend on the handoff between repeated load, compute, and overwrite phases.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now read tiled code as a repeating load-compute-handover pipeline, not as one monolithic loop. The next question is not whether tiling helps, but how aggressively to tile before resource costs push back.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Tile size and measurement',
+        intro: 'The final cards keep tile size from turning into superstition.',
+        feedback:
+          'If this was missed, remember that a larger tile buys more reuse only by spending more shared memory, registers, and sometimes occupancy.',
+        cards: [
+          {
+            id: 'matmul.tile_size.not_biggest',
+            prompt: 'Is the largest tile size that fits in shared memory automatically the best choice?',
+            answer: 'No. Larger tiles may improve reuse but can also reduce occupancy, increase register pressure, or make other bottlenecks dominate.'
+          },
+          {
+            id: 'matmul.tile_size.shared_bytes',
+            prompt: 'At a high level, what shared-memory cost grows when you enlarge the staged A and B tiles?',
+            answer: 'The block must store more tile data on-chip, so shared-memory usage per block grows.'
+          },
+          {
+            id: 'matmul.tile_size.tradeoff',
+            prompt: 'Name three things tile size negotiates at once.',
+            answer: 'Data reuse, shared-memory consumption, and register/occupancy pressure.'
+          },
+          {
+            id: 'matmul.measurement.receipt',
+            prompt: 'What must travel with a claim that one tile size beat another?',
+            answer: 'GPU model, matrix sizes, tile sizes, timing method, synchronization method, repetitions or warmup, and preferably profiler context.'
+          },
+          {
+            id: 'matmul.measurement.transfer_arch',
+            kind: 'transfer',
+            prompt: 'A tile size wins on one GPU but loses on another. What should you suspect first?',
+            answer: 'Architecture-specific resource tradeoffs or memory-system behavior, not a universal tile-size law.'
+          },
+          {
+            id: 'matmul.measurement.integrating_receipt',
+            kind: 'integrating',
+            prompt: 'Why is tile-size tuning better treated as evidence-driven negotiation than as a search for one magic number?',
+            answer: 'Because the best tile size depends on the hardware, problem shape, and resource tradeoffs visible only through measurement and profiling.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now treat tile size as a resource negotiation among reuse, on-chip storage, and active parallelism. A bigger tile is a stronger reuse claim, but also a stronger demand for scarce resources.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'Tiling is not an optimization trick. It is a way of reshaping data movement. The same arithmetic becomes faster because the machine is asked to move and reuse data in a more coherent pattern.'
+      }
+    ]
   }
 ];
 
