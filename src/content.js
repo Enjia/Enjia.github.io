@@ -638,7 +638,8 @@ const cudaNarrativeInsertions = [
     paragraphs: [
       'Once indexing is clear, the next question is what the hardware can do with all these threads. CUDA exposes threads because they are the unit the programmer reasons about, but the machine often schedules them in groups. That gap between the programming unit and the scheduling intuition is not a nuisance. It is where many performance explanations live.',
       'A single thread is too small a lens for performance. If one lane reads a float, you know almost nothing. If thirty-two neighboring lanes read thirty-two neighboring floats, you know something important: the memory system has a clean pattern to work with. Likewise, if neighboring lanes branch in different directions, you have learned something about the instruction stream. CUDA performance is frequently a story about neighborhoods, not individuals.',
-      'This is also why the same code can feel simple and subtle at the same time. The line `out[i] = a[i] + b[i]` is simple. The question of whether the lanes executing that line have good addresses, enough occupancy, and no hidden synchronization bottleneck is not simple. The essay will keep returning to this two-level view: one thread explains correctness; a neighborhood of threads explains much of performance.'
+      'This is also why the same code can feel simple and subtle at the same time. The line `out[i] = a[i] + b[i]` is simple. The question of whether the lanes executing that line have good addresses, enough occupancy, and no hidden synchronization bottleneck is not simple. The essay will keep returning to this two-level view: one thread explains correctness; a neighborhood of threads explains much of performance.',
+      'You can now separate thread existence from memory permission. A launch tells you which threads exist; the bounds guard tells you which of those threads are allowed to touch real data.'
     ]
   },
   {
@@ -678,7 +679,8 @@ const cudaNarrativeInsertions = [
     paragraphs: [
       'Coalescing is satisfying because it turns invisible hardware behavior into something you can often sketch with pencil marks. Write lane numbers across a row. Under each lane, write the address it requests. If the addresses march forward compactly, the pattern is friendly. If they leap across memory, the pattern is suspicious. This is not the full architectural rulebook, but it is a good first instrument.',
       'The matrix case makes the idea concrete. In row-major storage, moving across a row touches adjacent memory; moving down a column jumps by the row stride. A warp that maps lanes across a row tends to have an easier time than a warp that maps lanes down a column. This is why layout and thread mapping become inseparable once performance matters.',
-      'Microbenchmark papers and roofline analyses exist because real machines add detail to this simple picture. Cache levels, memory partitions, instruction mix, predication, and shared-memory behavior can all matter. The beginner mistake is not having a simplified model. The mistake is forgetting that the simplified model is a starting point, not a law of nature.'
+      'Microbenchmark papers and roofline analyses exist because real machines add detail to this simple picture. Cache levels, memory partitions, instruction mix, predication, and shared-memory behavior can all matter. The beginner mistake is not having a simplified model. The mistake is forgetting that the simplified model is a starting point, not a law of nature.',
+      'You can now read a memory access as a warp-shaped address bundle. The source line may mention one index expression, but the machine sees a neighborhood of lanes requesting a pattern of addresses together.'
     ]
   },
   {
@@ -694,7 +696,8 @@ const cudaNarrativeInsertions = [
     paragraphs: [
       'Synchronization bugs are unpleasant because they often look like ghosts. The code is deterministic as text, but the schedule is not a single tidy sequence. If one thread reads before another thread writes, the program may sometimes see yesterday’s value, sometimes today’s value, and sometimes a value that merely looks plausible.',
       'The most important distinction is scope. `__syncthreads()` is a meeting for one block. It is not a meeting for the whole grid. If you need every block to finish phase one before any block begins phase two, you usually need a different kernel launch, a cooperative-groups design, or another explicit mechanism. Treating a block barrier as a grid barrier is one of those mistakes that can survive small tests and fail under scale.',
-      'Atomic operations solve a different problem. A barrier says: everyone in this scope has arrived here. An atomic update says: this particular shared update should not be interleaved with another update to the same location. You can need one, the other, both, or neither. Keeping those concepts separate prevents a lot of cargo-cult synchronization.'
+      'Atomic operations solve a different problem. A barrier says: everyone in this scope has arrived here. An atomic update says: this particular shared update should not be interleaved with another update to the same location. You can need one, the other, both, or neither. Keeping those concepts separate prevents a lot of cargo-cult synchronization.',
+      'You can now read shared memory code as a producer-consumer timeline. The important question is no longer “does this kernel use shared memory?” but “which writes must finish before which reads become legal?”'
     ]
   },
   {
@@ -710,7 +713,9 @@ const cudaNarrativeInsertions = [
     paragraphs: [
       'Performance measurement is the essay’s final concept because it keeps the earlier concepts honest. A story about coalescing is only a hypothesis until the measurement setup lets you see memory behavior. A story about occupancy is only a hypothesis until you know whether the kernel is latency-bound, bandwidth-bound, or compute-bound. CUDA optimization is not a bag of tricks; it is a loop of model, prediction, evidence, and revision.',
       'This is where the local resources in the CUDA folder become relevant. Roofline papers, instruction-roofline models, and architecture microbenchmarks all say the same practical thing in different languages: modern GPUs are too complex for context-free performance slogans. A V100 story, an A100 story, a Hopper story, and a Blackwell story may rhyme, but they are not identical stories.',
-      'The point is not to frighten you away from simple models. The point is to earn better models gradually. At the end of this first essay, you should be able to inspect a small kernel and ask useful questions: Who owns each element? Which lanes branch together? Which lanes touch neighboring addresses? Which memory space holds the reused data? What synchronization makes the cooperation legal? What measurement would prove or disprove my explanation?'
+      'The point is not to frighten you away from simple models. The point is to earn better models gradually. At the end of this first essay, you should be able to inspect a small kernel and ask useful questions: Who owns each element? Which lanes branch together? Which lanes touch neighboring addresses? Which memory space holds the reused data? What synchronization makes the cooperation legal? What measurement would prove or disprove my explanation?',
+      'You can now treat a performance number as a hypothesis with a receipt. A benchmark is not a verdict by itself; it becomes useful only when hardware, input size, synchronization, and measurement method travel with it.',
+      'A CUDA kernel is not just scalar code repeated many times. It is a map of ownership, neighborhoods, data movement, and time boundaries.'
     ]
   }
 ];
