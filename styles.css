@@ -488,24 +488,6 @@ code {
   border-radius: 0.35rem;
 }
 
-.artifact-rhythm {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  margin: 0.4rem 0 0.85rem;
-}
-
-.artifact-rhythm span {
-  padding: 0.18rem 0.4rem;
-  color: var(--soft-ink);
-  background: rgba(238, 227, 247, 0.8);
-  border-radius: 999px;
-  font-family: var(--mono);
-  font-size: 0.66rem;
-  letter-spacing: 0.03em;
-  text-transform: lowercase;
-}
-
 .artifact-prediction label {
   display: grid;
   gap: 0.42rem;

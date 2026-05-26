@@ -11,7 +11,7 @@ export const seriesNavigation = [
     slug: 'matmul',
     title: 'The Tile Loom',
     subtitle: 'A story of reuse, shared memory, and matrix multiplication',
-    status: 'next essay'
+    status: 'published essay'
   },
   {
     slug: 'compiler',
@@ -683,13 +683,13 @@ if (tid == 0) output[blockIdx.x] = partial[0];`
             kind: 'evidence',
             label: 'Evidence view',
             language: 'text',
-            body: 'Inside one 16x16 C tile and one fixed k, threads in the same output row all need the same A[row, k], while threads in the same output column all need the same B[k, col]. Naive code can therefore reread the same A value up to 16 times across columns and the same B value up to 16 times across rows.'
+            body: 'Inside one 16x16 C tile and one fixed k, threads in the same output row all need the same A[row, k], while threads in the same output column all need the same B[k, col]. This establishes overlapping input demand inside the block and creates an opportunity for redundant traffic if those requests are repeatedly served from far away.'
           },
           {
             kind: 'interpretation',
             label: 'Machine reading',
             language: 'text',
-            body: 'The arithmetic loop is not the whole story. Naive matmul can make a block ask global memory for overlapping data again and again. That repeated traffic is the opening mystery tiling is meant to resolve.'
+            body: 'The arithmetic loop is not the whole story. The block creates overlapping demand for the same input values across neighboring threads. Tiling matters because it gives the block a way to turn that overlap into explicit local reuse.'
           }
         ]
       },
@@ -703,7 +703,7 @@ if (tid == 0) output[blockIdx.x] = partial[0];`
         rows: [
           ['one A[row, k]', 'needed by up to 16 threads across one C-tile row'],
           ['one B[k, col]', 'needed by up to 16 threads across one C-tile column'],
-          ['naive effect', 'global memory may serve overlapping requests repeatedly'],
+          ['naive effect', 'overlapping input demand can create an opportunity for redundant traffic'],
           ['tiling motive', 'load once per tile phase, reuse many times inside the block']
         ]
       },
@@ -1018,6 +1018,26 @@ int col = block_col + threadIdx.x;`
           'You can now read tiled code as a repeating load-compute-handover pipeline, not as one monolithic loop. The next question is not whether tiling helps, but how aggressively to tile before resource costs push back.'
       },
       {
+        type: 'paragraph',
+        kicker: 'Mystery',
+        text:
+          'Why can the same tiled idea speed one kernel up and make another one stall? Tile size changes two things at once: it can increase reuse, but it also increases demands on shared memory, registers, and active parallelism.'
+      },
+      {
+        type: 'inlineFigure',
+        label: 'evidence',
+        id: 'tile-size-tradeoff-map',
+        title: 'Tile size is a tradeoff map, not a magic number',
+        caption:
+          'A larger tile strengthens the reuse claim only by making stronger resource claims on the machine at the same time.',
+        rows: [
+          ['larger tile may improve', 'reuse per tile phase and arithmetic work per load'],
+          ['larger tile also raises', 'shared-memory bytes per block'],
+          ['larger tile often pressures', 'register use and active blocks per SM'],
+          ['measurement question', 'did the extra reuse outweigh the resource cost here?']
+        ]
+      },
+      {
         type: 'reviewSet',
         title: 'Tile size and measurement',
         intro: 'The final cards keep tile size from turning into superstition.',
@@ -1062,6 +1082,16 @@ int col = block_col + threadIdx.x;`
         type: 'paragraph',
         text:
           'You can now treat tile size as a resource negotiation among reuse, on-chip storage, and active parallelism. A bigger tile is a stronger reuse claim, but also a stronger demand for scarce resources.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'One final bridge from the first essay matters here: production tiled kernels do not live in a perfect rectangular world. Partial tiles and edge tiles appear whenever M, N, or K does not divide the tile shape cleanly. That means boundary handling is needed around global loads and C stores, and sometimes around the final kk work of a partial K phase as well.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'The mental model is the same one you already built in The Thread Atlas. The launch is rectangular because hardware likes regular work. Bounds guards and predicates are what make the irregular edge legal. Tiling changes the geometry of data movement; it does not eliminate the need for legality boundaries.'
       },
       {
         type: 'paragraph',

@@ -128,11 +128,11 @@ function renderComingSoon(slug) {
       <main class="essay-page">
         <article class="essay-body">
           <header class="essay-header">
-            <p class="eyebrow">planned essay</p>
+            <p class="eyebrow">series essay</p>
             <h1>${escapeHtml(entry.title)}</h1>
             <p class="subtitle">${escapeHtml(entry.subtitle)}</p>
           </header>
-          <p>This essay is intentionally listed in the series sidebar, but the prototype now focuses on the first CUDA essay. The next implementation step is to turn the matmul plan into the second full essay.</p>
+          <p>This essay is part of the series. The current prototype now includes the first two CUDA essays, and the remaining planned essays will follow the same mnemonic-medium structure.</p>
         </article>
         ${sidebar(slug)}
       </main>
@@ -230,13 +230,6 @@ function renderArtifact(section) {
         <strong>${escapeHtml(section.title)}</strong>
         <em>${escapeHtml(section.caption)}</em>
       </figcaption>
-      ${
-        section.unitPattern
-          ? `<div class="artifact-rhythm">${section.unitPattern
-              .map((step) => `<span>${escapeHtml(step)}</span>`)
-              .join('')}</div>`
-          : ''
-      }
       <div class="artifact-prediction">
         <label>
           <span>Predict before evidence</span>
