@@ -1042,7 +1042,7 @@ int col = block_col + threadIdx.x;`
         label: 'benchmark receipt',
         title: 'Artifact 4: a matmul optimization claim needs a receipt',
         caption:
-          'The official CUDA best-practices guide reports concrete V100 bandwidth numbers for shared-memory matmul variants. That is evidence for the optimization mechanism, not a tile-size sweep.',
+          'The official CUDA best-practices guide reports concrete V100 bandwidth numbers for one documented shared-memory matmul example. The receipt supports an optimization mechanism in that example, not a universal tuning law.',
         unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
         prediction: {
           id: 'artifact.matmul_measurement.receipt_prediction',
@@ -1064,13 +1064,13 @@ Shared memory to eliminate redundant reads of a tile of B: 195.5 GB/s`
             kind: 'evidence',
             label: 'Evidence view',
             language: 'text',
-            body: 'The official guide uses these numbers to show that shared memory can raise effective bandwidth by removing redundant global transfers in a tiled matmul example. For this essay, treat these numbers as example-specific evidence for the mechanism, not as a universal tile-size rule.'
+            body: 'NVIDIA reports 119.9 GB/s for the unoptimized kernel, 144.4 GB/s after using shared memory for a tile of A, and 195.5 GB/s after using shared memory to eliminate redundant reads of a tile of B on a Tesla V100. Those numbers support the claim that this documented optimization mechanism improved effective bandwidth in that example.'
           },
           {
             kind: 'interpretation',
             label: 'Machine reading',
             language: 'text',
-            body: 'This is strong evidence that the mechanism is real for the documented kernel and hardware. It is not yet a local benchmark for your own tile-size choice, because a tile-size search still needs its own receipt: matrix sizes, GPU model, synchronization method, and profiler context.'
+            body: 'This is a receipt for one matmul optimization mechanism on one GPU. It shows that shared memory can matter when a block creates reuse and avoids redundant global transfers, but it is not a universal tuning law. It does not by itself choose a tile size for your kernel; a local tuning claim still needs matrix shapes, tile dimensions, GPU model, synchronization method, and profiler context.'
           }
         ]
       },
@@ -1205,50 +1205,50 @@ Shared memory to eliminate redundant reads of a tile of B: 195.5 GB/s`
       {
         type: 'artifact',
         label: 'code lens + prediction',
-        title: 'Artifact 1: the same matmul has five faces',
+        title: 'Artifact 1: one matmul in five views',
         caption:
-          'The compiler must preserve one meaning while making more of the machine visible. That is why the same computation shows up in several representations.',
+          'Watch one computation become easier to inspect as the representation changes: first meaning, then iteration, then locality, then mapping.',
         unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
         prediction: {
           id: 'artifact.compiler.five_faces_prediction',
           prompt:
-            'Before revealing the pipeline, which representation do you expect to be best for semantics, and which one do you expect to be best for locality tuning?',
-          placeholder: 'Predict which face keeps meaning best and which face exposes the most optimization opportunity.'
+            'Before revealing the pipeline, which view would you trust for mathematical meaning, and which view would you inspect when tuning locality or GPU mapping?',
+          placeholder: 'Predict which view keeps meaning safest and which view exposes execution decisions.'
         },
         tabs: [
           {
             kind: 'source',
             label: 'Source view',
             language: 'text',
-            body: `math:
+            body: `math view:
   C = A @ B
 
-tensor IR:
+tensor IR view:
   %c = linalg.matmul ins(%a, %b : tensor<MxKxf32>, tensor<KxNxf32>)
                      outs(%c0 : tensor<MxNxf32>)
 
-structured op:
+structured-op view:
   iterators = [parallel, parallel, reduction]
   maps = (i,k), (k,j), (i,j)
 
-loop nest:
+loop-nest view:
   for i, j, k:
     C[i,j] += A[i,k] * B[k,j]
 
-GPU sketch:
+GPU-mapping view:
   block owns one C tile; threads load A/B tiles and accumulate`
           },
           {
             kind: 'evidence',
             label: 'Evidence view',
             language: 'text',
-            body: 'A math expression preserves meaning best. A structured tensor op preserves more of the iteration structure the compiler needs for tiling and fusion. A loop nest exposes locality. A GPU sketch exposes mapping and storage choices.'
+            body: 'The views answer different questions. The math view preserves meaning; tensor IR keeps typed values; the structured op exposes iteration and access maps; the loop nest exposes order and locality; the GPU sketch exposes mapping and storage choices.'
           },
           {
             kind: 'interpretation',
             label: 'Machine reading',
             language: 'text',
-            body: 'The compiler needs multiple faces because no single face simultaneously preserves semantics, exposes iteration structure, and commits to a storage plan. Each lowering step keeps some information and makes other information explicit.'
+            body: 'The point is not to memorize five names. It is to watch the compiler keep meaning stable while making more execution questions inspectable. Each lowering step keeps some information and makes other information explicit.'
           }
         ]
       },
