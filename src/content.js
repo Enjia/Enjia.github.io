@@ -1827,7 +1827,7 @@ T.copy(C_f, C[by * BM, bx * BN])`
         label: 'receipt',
         title: 'Artifact 3: a schedule claim needs a generated-code receipt',
         caption:
-          'A TileLang schedule is only real if the lowered code still matches the tile story and the receipt agrees with the claim.',
+          'A TileLang schedule claim needs separate receipts for lowering fidelity, correctness, and performance.',
         prediction: {
           id: 'artifact.tilelang.receipt_prediction',
           prompt:
@@ -1858,20 +1858,49 @@ def matmul(
                B: T.Tensor((K, N), dtype),
                C: T.Tensor((M, N), dtype)):
         with T.Kernel(T.ceildiv(N, block_N), T.ceildiv(M, block_M), threads=threads) as (bx, by):
-            ...
+            A_s = T.alloc_shared((block_M, block_K), dtype)
+            B_s = T.alloc_shared((block_K, block_N), dtype)
+            C_f = T.alloc_fragment((block_M, block_N), accum_dtype)
+            T.clear(C_f)
+            for ko in T.Pipelined(T.ceildiv(K, block_K), num_stages=num_stages):
+                T.copy(A[by * block_M, ko * block_K], A_s)
+                T.copy(B[ko * block_K, bx * block_N], B_s)
+                T.gemm(A_s, B_s, C_f)
+            T.copy(C_f, C[by * block_M, bx * block_N])
     return kernel`
           },
           {
             kind: 'evidence',
-            label: 'Evidence view',
+            label: 'Receipt excerpt',
             language: 'text',
-            body: 'The autotuner explores configuration space, validates correctness, benchmarks candidates, and caches the winner for reuse. The receipt is not just “faster on this run”; it is the combination of config, shape, hardware, and lowered code that explains why a specific schedule won here.'
+            body: `A useful TileLang receipt has three separate checks:
+
+lowering receipt:
+  cache artifact: device_kernel.cu or printed CUDA source
+  excerpt:
+    __shared__ half A_s[128][32];
+    __shared__ half B_s[32][128];
+    for (int ko = 0; ko < ceildiv(K, 32); ++ko) {
+      // global -> shared copies for the next A/B tiles
+      // wait/sync for the staged tiles
+      // mma/gemm updates the C fragment
+    }
+    // fragment C -> global C store
+
+correctness receipt:
+  ref_prog: torch.allclose(C, (A @ B).to(C.dtype), rtol=1e-2, atol=1e-2) -> pass
+
+performance receipt:
+  config: block_M=128, block_N=128, block_K=32, num_stages=3, threads=128
+  shape: M=N=K=1024, dtype=float16, accum=float32
+  timing: warmup=25, rep=100, backend=CUDA events
+  cache: best_config.json + latency.json saved with the tuned kernel`
           },
           {
             kind: 'interpretation',
             label: 'Machine reading',
             language: 'text',
-            body: 'The schedule is a claim about hardware and shape, not a prayer. If the lowered code or the benchmark receipt disagrees, the receipt wins. That is what keeps the forge honest.'
+            body: 'Keep the proof obligations separate. Generated code proves whether the schedule was lowered into the structure you intended. A reference check proves whether the output is correct. A benchmark or profiler proves whether this config improved performance on this hardware and shape. A fast benchmark cannot prove lowering fidelity, and a faithful lowering cannot prove speed.'
           }
         ]
       },
@@ -1884,9 +1913,10 @@ def matmul(
           'A TileLang tuning story is only complete when the source claim, config, lowered behavior, and receipt all travel together.',
         rows: [
           ['source claim', 'block_M, block_N, block_K, stages, threads'],
-          ['lowered behavior', 'copy, gemm, pipeline, store'],
-          ['receipt', 'benchmark or profiler evidence on one GPU and shape'],
-          ['what it proves', 'this schedule claim on this hardware, not a universal law']
+          ['lowering receipt', 'generated CUDA/TIR shows copy, gemm, pipeline, store'],
+          ['correctness receipt', 'reference check passes within stated tolerance'],
+          ['performance receipt', 'benchmark or profiler evidence on one GPU and shape'],
+          ['what it proves', 'each receipt proves only its own claim scope']
         ]
       },
       {
