@@ -629,6 +629,44 @@ pre code {
   line-height: 1.48;
 }
 
+.lab-receipt-excerpt {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--rule);
+}
+
+.lab-excerpt-label,
+.lab-look-for-label {
+  margin: 0 0 0.42rem;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.lab-receipt-excerpt pre {
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.lab-look-for {
+  margin-top: 0.85rem;
+}
+
+.lab-look-for ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--soft-ink);
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+
+.lab-look-for li + li {
+  margin-top: 0.35rem;
+}
+
 @media (max-width: 920px) {
   .essay-page {
     grid-template-columns: 1fr;

@@ -362,7 +362,23 @@ function renderLabCard(lab, index) {
           <p>${formatInline(lab.receipt)}</p>
         </div>
       </div>
+      ${lab.excerpt ? renderLabExcerpt(lab.excerpt, lab.lookFor ?? []) : ''}
     </section>
+  `;
+}
+
+function renderLabExcerpt(excerpt, lookFor) {
+  return `
+    <div class="lab-receipt-excerpt">
+      <p class="lab-excerpt-label">${escapeHtml(excerpt.title)}</p>
+      <pre data-language="${escapeHtml(excerpt.language)}"><code>${escapeHtml(excerpt.body)}</code></pre>
+      <div class="lab-look-for">
+        <p class="lab-look-for-label">Look for</p>
+        <ul>
+          ${lookFor.map((item) => `<li>${formatInline(item)}</li>`).join('')}
+        </ul>
+      </div>
+    </div>
   `;
 }
 

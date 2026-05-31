@@ -87,7 +87,33 @@ export const compilerLabs = [
     fallback:
       'Without a local MLIR build, compare the provided IR excerpts and label which one is an IR receipt, bufferization receipt, conversion receipt, or runtime receipt.',
     receipt:
-      'A correct lab note refuses to let one pass output prove every claim; each IR stage proves only the structure visible at that stage.'
+      'A correct lab note refuses to let one pass output prove every claim; each IR stage proves only the structure visible at that stage.',
+    excerpt: {
+      title: 'Static receipt excerpt',
+      language: 'mlir',
+      body: `IR receipt:
+  %init = tensor.empty() : tensor<128x128xf32>
+  %c = linalg.matmul
+    ins(%a, %b : tensor<128x64xf32>, tensor<64x128xf32>)
+    outs(%init : tensor<128x128xf32>) -> tensor<128x128xf32>
+
+bufferization receipt:
+  linalg.matmul
+    ins(%A, %B : memref<128x64xf32>, memref<64x128xf32>)
+    outs(%C : memref<128x128xf32>)
+
+conversion receipt:
+  scf.for %i = %c0 to %c128 step %c1 {
+    scf.for %j = %c0 to %c128 step %c1 {
+      scf.for %k = %c0 to %c64 step %c1 { ... }
+    }
+  }`
+    },
+    lookFor: [
+      '`linalg.matmul` proves the structured operation and iterator/access relationships are still visible.',
+      '`memref<128x128xf32>` proves the lab has crossed from tensor value semantics into explicit storage.',
+      '`scf.for` loops prove executable control structure, not runtime speed or numeric correctness.'
+    ]
   },
   {
     id: 'compiler-lab-02',
@@ -101,7 +127,28 @@ export const compilerLabs = [
     fallback:
       'Without MLIR locally, read the before/after excerpt and mark the destination, the first explicit memref, and the place where storage semantics replace value semantics.',
     receipt:
-      'A bufferization receipt is the before/after IR pair that shows which tensor values became buffers and why copies were or were not required.'
+      'A bufferization receipt is the before/after IR pair that shows which tensor values became buffers and why copies were or were not required.',
+    excerpt: {
+      title: 'Before/after buffer boundary',
+      language: 'mlir',
+      body: `before one-shot-bufferize:
+  %init = tensor.empty() : tensor<64x64xf32>
+  %out = linalg.matmul
+    ins(%a, %b : tensor<64x32xf32>, tensor<32x64xf32>)
+    outs(%init : tensor<64x64xf32>) -> tensor<64x64xf32>
+
+after bufferization, inspect for:
+  memref.alloc() : memref<64x64xf32>     // new storage if reuse is unsafe
+  linalg.matmul ins(%A, %B : memref<...>, memref<...>)
+                outs(%C : memref<64x64xf32>)
+  memref.copy %tmp, %C : memref<64x64xf32> to memref<64x64xf32>
+  // A copy is evidence of a storage constraint, not a semantic change.`
+    },
+    lookFor: [
+      'The destination-style `outs(...)` gives bufferization a candidate place to write.',
+      '`memref.alloc` or `memref.copy` should trigger the question: what aliasing or lifetime fact blocked reuse?',
+      'The math claim is still matmul; the bufferization receipt only proves storage choices.'
+    ]
   },
   {
     id: 'compiler-lab-03',
@@ -115,7 +162,29 @@ export const compilerLabs = [
     fallback:
       'Without a runtime, classify three static artifacts: an IR diff, a reference-output note, and a timing table. State which claim each artifact can and cannot prove.',
     receipt:
-      'A lowering lab receipt names the pass output for structure, the reference check for correctness, and the benchmark or profiler note for performance.'
+      'A lowering lab receipt names the pass output for structure, the reference check for correctness, and the benchmark or profiler note for performance.',
+    excerpt: {
+      title: 'Claim-scope receipt set',
+      language: 'text',
+      body: `lowering receipt:
+  before: maps = [(i,k), (k,j), (i,j)]
+  after:  load A[i,k], load B[k,j], accumulate C[i,j]
+  proves: indexing structure was lowered into the expected control/data flow
+
+reference check:
+  max_abs_error <= 1e-4 against a trusted framework result
+  proves: this run produced an acceptable numeric result
+
+benchmark receipt:
+  GPU: A100-SXM4-40GB, shape: 4096x4096x4096, dtype: f32
+  pipeline: linalg -> scf -> llvm, warmup: 10, reps: 100, median_ms: 12.4
+  proves: one performance claim for this hardware, shape, pipeline, and timing method`
+    },
+    lookFor: [
+      'A wrong indexing map is caught by an IR/lowering receipt before a benchmark can explain it.',
+      'An incorrect numeric result needs a reference check; speed does not rescue wrong code.',
+      'A benchmark receipt supports only the stated hardware, shape, pipeline, and timing method.'
+    ]
   }
 ];
 
