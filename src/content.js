@@ -1040,9 +1040,9 @@ int col = block_col + threadIdx.x;`
       {
         type: 'artifact',
         label: 'benchmark receipt',
-        title: 'Artifact 4: a tile-size claim needs a receipt',
+        title: 'Artifact 4: a matmul optimization claim needs a receipt',
         caption:
-          'The official CUDA best-practices guide reports concrete V100 bandwidth numbers for the shared-memory matmul example. That is evidence for the mechanism, not a universal law about every tile size.',
+          'The official CUDA best-practices guide reports concrete V100 bandwidth numbers for shared-memory matmul variants. That is evidence for the optimization mechanism, not a tile-size sweep.',
         unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
         prediction: {
           id: 'artifact.matmul_measurement.receipt_prediction',
@@ -1064,7 +1064,7 @@ Shared memory to eliminate redundant reads of a tile of B: 195.5 GB/s`
             kind: 'evidence',
             label: 'Evidence view',
             language: 'text',
-            body: 'The official guide uses these numbers to show that shared memory can raise effective bandwidth by removing redundant global transfers in a tiled matmul example. The guide also warns that this is an example-specific result, not a blanket rule for every kernel or GPU.'
+            body: 'The official guide uses these numbers to show that shared memory can raise effective bandwidth by removing redundant global transfers in a tiled matmul example. For this essay, treat these numbers as example-specific evidence for the mechanism, not as a universal tile-size rule.'
           },
           {
             kind: 'interpretation',
@@ -1220,12 +1220,23 @@ Shared memory to eliminate redundant reads of a tile of B: 195.5 GB/s`
             kind: 'source',
             label: 'Source view',
             language: 'text',
-            body: `matmul:
+            body: `math:
   C = A @ B
 
-toy tensor IR:
+tensor IR:
   %c = linalg.matmul ins(%a, %b : tensor<MxKxf32>, tensor<KxNxf32>)
-                     outs(%c0 : tensor<MxNxf32>)`
+                     outs(%c0 : tensor<MxNxf32>)
+
+structured op:
+  iterators = [parallel, parallel, reduction]
+  maps = (i,k), (k,j), (i,j)
+
+loop nest:
+  for i, j, k:
+    C[i,j] += A[i,k] * B[k,j]
+
+GPU sketch:
+  block owns one C tile; threads load A/B tiles and accumulate`
           },
           {
             kind: 'evidence',
@@ -1402,9 +1413,9 @@ toy tensor IR:
       {
         type: 'artifact',
         label: 'code lens + prediction',
-        title: 'Artifact 3: lowering keeps structure until schedule chooses storage',
+        title: 'Artifact 3: lowering keeps structure until schedule chooses execution',
         caption:
-          'Lowering is not a single magic step. It is a sequence of increasingly concrete choices that preserve meaning until they must commit to loops, memory, and mapping.',
+          'Lowering is not a single magic step. It is a sequence of increasingly concrete choices that preserve meaning until the pipeline commits to loops, buffers, and mapping.',
         unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
         prediction: {
           id: 'artifact.compiler.lowering_prediction',
@@ -1423,7 +1434,7 @@ toy tensor IR:
             kind: 'evidence',
             label: 'Evidence view',
             language: 'text',
-            body: 'Lowering keeps the meaning longest, then exposes iteration structure, then commits to storage and mapping. Tiling, fusion, vectorization, and GPU mapping are schedule choices that become meaningful only because the earlier structure still exists.'
+            body: 'Lowering keeps the meaning longest, then exposes iteration structure, then makes execution choices more concrete. Bufferization owns the storage contract; scheduling owns choices such as tiling, fusion, vectorization, and GPU mapping.'
           },
           {
             kind: 'interpretation',
