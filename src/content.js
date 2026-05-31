@@ -22,8 +22,8 @@ export const seriesNavigation = [
   {
     slug: 'tilelang',
     title: 'The TileLang Forge',
-    subtitle: 'A workshop for writing tile-shaped kernels',
-    status: 'planned'
+    subtitle: 'A TileLang essay about tiles, schedules, and generated code',
+    status: 'published essay'
   }
 ];
 
@@ -1545,6 +1545,391 @@ GPU-mapping view:
         type: 'paragraph',
         text:
           'You can now separate tensor meaning from buffer placement and schedule choice. Once that split is visible, compiler passes stop feeling like black-box magic and start feeling like a disciplined sequence of visibility changes.'
+      }
+    ]
+  },
+  {
+    slug: 'tilelang',
+    title: 'The TileLang Forge',
+    subtitle: 'A TileLang essay about tiles, schedules, and generated code',
+    author: 'Mnemonic Medium Lab',
+    deckDescription:
+      'A discovery-style TileLang essay about how tile ownership, data movement, and schedule choices become a written kernel and a generated receipt. The goal is to turn TileLang into a reusable authorship lens rather than a black box.',
+    sections: [
+      {
+        type: 'paragraph',
+        kicker: 'Opening question',
+        text:
+          'What changes when you stop writing a kernel as raw thread choreography and start writing it as a tile-shaped plan? TileLang is interesting because it lets you state the plan in the same units the machine cares about: tiles, memory scopes, stages, and the schedule that connects them.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'This essay treats TileLang as the place where authorship becomes explicit. The source should tell you what each tile owns, what data moves between scopes, which config values shape the schedule, and which schedule choices are only claims until generated code and a receipt prove them. Because TileLang evolves quickly, version and lowering receipts are part of the lesson, not an appendix.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'Keep three questions nearby as you read. What tile does this kernel own? What data lives in global, shared, or fragment scope between phases? What evidence proves that the schedule you wrote is the schedule the compiler actually honored?'
+      },
+      {
+        type: 'reviewSet',
+        title: 'TileLang positioning',
+        intro: 'These cards keep TileLang in the right place between CUDA and compiler thinking.',
+        feedback:
+          'If this feels fuzzy, remember that TileLang is not a replacement for CUDA. It is a higher-level way to write tile-shaped kernels while still depending on GPU concepts and compiler lowering.',
+        cards: [
+          {
+            id: 'tilelang.positioning.dsl_definition',
+            prompt: 'What is TileLang in one sentence?',
+            answer:
+              'A Pythonic DSL on top of TVM for writing high-performance GPU and CPU kernels around tile-shaped dataflow and schedules.'
+          },
+          {
+            id: 'tilelang.positioning.not_cuda_replacement',
+            prompt: 'Why does TileLang not eliminate the need for CUDA concepts?',
+            answer:
+              'Because performance still depends on blocks, memory hierarchy, synchronization, coalescing, and resource tradeoffs.'
+          },
+          {
+            id: 'tilelang.positioning.generated_code',
+            prompt: 'Why should a TileLang tutorial inspect generated code?',
+            answer: 'To verify that the compiler honored the intended tile and schedule story after lowering.'
+          },
+          {
+            id: 'tilelang.positioning.version_lock',
+            prompt: 'Why should a TileLang essay record version and environment details?',
+            answer: 'Because APIs and lowering details evolve quickly, and receipts only make sense relative to a specific build and hardware setup.'
+          },
+          {
+            id: 'tilelang.positioning.transfer_cuda_lens',
+            kind: 'transfer',
+            prompt: 'If you already know CUDA tiled matmul, what new thing does TileLang add?',
+            answer:
+              'A way to write tile ownership, memory movement, and schedule more directly while still reasoning about the lowered machine.'
+          }
+        ]
+      },
+      {
+        type: 'artifact',
+        label: 'tile map',
+        title: 'Artifact 1: the first kernel names an ownership tile',
+        caption:
+          'A TileLang kernel should make the launch and the slice it owns obvious before you ever think about tuning.',
+        prediction: {
+          id: 'artifact.tilelang.first_kernel_prediction',
+          prompt:
+            'For a vector-style kernel launched over a rounded-up tile, what does each program instance own, and what should the final partial slice do?',
+          placeholder: 'Predict the owned slice and the legal edge behavior before revealing the kernel sketch.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'python',
+            body: `import tilelang.language as T
+from tilelang import jit
+
+@T.prim_func
+def add_kernel(
+    A: T.Tensor((N,), 'float32'),
+    B: T.Tensor((N,), 'float32'),
+    C: T.Tensor((N,), 'float32'),
+):
+    with T.Kernel(T.ceildiv(N, 128), threads=128) as (bx,):
+        for tx in T.Parallel(128):
+            i = bx * 128 + tx
+            if i < N:
+                C[i] = A[i] + B[i]`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'TileLang makes the launch read like an ownership map. `T.Kernel` states the launch context, `T.Parallel` keeps the within-tile work regular, and the guard makes the final partial slice legal instead of accidental.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'You can now read a TileLang kernel as a tile map rather than as a generic function call. The source declares which slice each program instance owns, and the machine can lower that declaration without hiding the ownership question.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'machine view',
+        id: 'tile-ownership-map',
+        title: 'One program instance owns one slice',
+        caption:
+          'The first win is not speed. It is that ownership becomes visible before any tuning begins.',
+        rows: [
+          ['launch context', 'how many tile owners exist'],
+          ['owned slice', 'which data region one instance is responsible for'],
+          ['edge guard', 'what makes the final partial slice legal'],
+          ['why this matters', 'TileLang reads like a plan, not just a function body']
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now read the launch as a contract rather than a stencil. The program instance, the tile, and the edge guard are all part of one visible plan.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Tile and memory scopes',
+        intro: 'These cards connect tile ownership to storage choices.',
+        feedback:
+          'If this feels slippery, remember the hierarchy: global memory is far away, shared memory is block-local, and fragment or register storage is where short-lived partial results usually belong.',
+        cards: [
+          {
+            id: 'tilelang.tile.core_purpose',
+            prompt: 'What is the core purpose of a tile in TileLang?',
+            answer: 'To act as the shared unit of movement, reuse, computation, and schedule.'
+          },
+          {
+            id: 'tilelang.scope.shared_vs_fragment',
+            prompt: 'What is the usual difference between shared and fragment storage?',
+            answer:
+              'Shared storage is block-visible and good for reuse across threads; fragment storage is closer to a private accumulator or per-thread working space.'
+          },
+          {
+            id: 'tilelang.copy.path',
+            prompt: 'When you see `T.copy(src, dst)`, what should you ask first?',
+            answer: 'Where the source lives, where the destination lives, and what tile shape or access path is being moved.'
+          },
+          {
+            id: 'tilelang.gemm.k_phase',
+            prompt: 'Why is the K dimension special in tiled GEMM?',
+            answer: 'Because it is the reduction dimension whose partial sums accumulate into the same C tile across phases.'
+          },
+          {
+            id: 'tilelang.scope.transfer_shared_candidate',
+            kind: 'transfer',
+            prompt: 'If many threads in a block reuse the same tile values, which storage scope is the natural candidate?',
+            answer: 'Shared memory, because the data is block-local and reused by multiple threads.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        kicker: 'Mystery',
+        text:
+          'Why does a GEMM kernel become easier to write once the tile and the scopes are explicit? Because the block stops being a vague patch of threads and starts being a reusable contract about where A, B, and C live during each phase.'
+      },
+      {
+        type: 'artifact',
+        label: 'dataflow sketch',
+        title: 'Artifact 2: GEMM turns dataflow into buffer choreography',
+        caption:
+          'The interesting part of TileLang GEMM is not that it hides the machine. It is that it writes the machine’s tile choreography directly.',
+        prediction: {
+          id: 'artifact.tilelang.gemm_prediction',
+          prompt:
+            'Before reveal, which buffers do you expect to sit in shared memory, which buffer should hold partial sums, and what should the loop over K be doing?',
+          placeholder: 'Predict the A/B/C roles and the phase structure before revealing the skeleton.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'python',
+            body: `BM, BN, BK = 128, 128, 32
+A_s = T.alloc_shared((BM, BK), dtype)
+B_s = T.alloc_shared((BK, BN), dtype)
+C_f = T.alloc_fragment((BM, BN), accum_dtype)
+T.clear(C_f)
+
+for ko in T.Pipelined(T.ceildiv(K, BK), num_stages=3):
+    T.copy(A[by * BM, ko * BK], A_s)
+    T.copy(B[ko * BK, bx * BN], B_s)
+    T.gemm(A_s, B_s, C_f)
+
+T.copy(C_f, C[by * BM, bx * BN])`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'The source already states the dataflow: the block owns one C tile, stages A and B in shared memory for each K phase, and keeps partial sums in a fragment buffer while `T.Pipelined` overlaps movement and compute. The point is not to hide the machine, but to make the movement explicit enough that lowering can preserve it.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'You can now author dataflow directly. Shared memory is one explicit stop in a tile journey that begins in global memory, passes through shared or fragment scope, and returns to output only when the phase is done.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'machine view',
+        id: 'tile-dataflow-stack',
+        title: 'TileLang exposes a dataflow stack',
+        caption:
+          'TileLang gives the reader a way to point at each layer of the machine instead of inferring it indirectly from low-level code.',
+        rows: [
+          ['global', 'input and output tensors'],
+          ['shared', 'block-local staged tiles'],
+          ['fragment', 'partial sums or short-lived working state'],
+          ['pipeline', 'overlap between copy and compute'],
+          ['result', 'what gets copied back after the tile phases finish']
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now author dataflow directly. Shared memory is no longer a magical optimization knob; it is one explicit stop in a tile journey that begins in global memory, passes through shared or fragment scope, and returns to output only when the phase is done.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Pipelining and schedule',
+        intro: 'These cards keep the overlap story honest.',
+        feedback:
+          'If this felt vague, remember that schedule is a claim about overlap and order, not a claim that the compiler will invent a better algorithm for you.',
+        cards: [
+          {
+            id: 'tilelang.pipeline.overlap',
+            prompt: 'What does `T.Pipelined` try to overlap?',
+            answer: 'The movement and compute phases that would otherwise happen strictly one after another.'
+          },
+          {
+            id: 'tilelang.pipeline.not_always_better',
+            prompt: 'Does increasing pipeline stages always make a kernel faster?',
+            answer: 'No. More stages can improve overlap, but they can also increase resource pressure or scheduling overhead.'
+          },
+          {
+            id: 'tilelang.pipeline.block_k',
+            prompt: 'What changes when `block_K` grows?',
+            answer: 'The amount of work and reuse in each K phase grows, but shared-memory and resource pressure can also rise.'
+          },
+          {
+            id: 'tilelang.pipeline.async_copy',
+            prompt: 'Why might `T.async_copy` matter in a tuned kernel?',
+            answer: 'It can make global-to-shared movement explicit enough to overlap with compute, but it still needs correct waiting and synchronization.'
+          },
+          {
+            id: 'tilelang.pipeline.transfer_schedule',
+            kind: 'transfer',
+            prompt: 'If a larger tile makes a kernel slower, what class of tradeoff should you suspect before blaming TileLang itself?',
+            answer: 'A reuse-versus-resource tradeoff, such as shared-memory pressure, register pressure, or reduced occupancy.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        kicker: 'Mystery',
+        text:
+          'What does a schedule claim really promise? Not that the compiler will invent a better algorithm, but that the same tile plan can be lowered into a different overlap pattern, a different launch shape, or a different memory path.'
+      },
+      {
+        type: 'artifact',
+        label: 'receipt',
+        title: 'Artifact 3: a schedule claim needs a generated-code receipt',
+        caption:
+          'A TileLang schedule is only real if the lowered code still matches the tile story and the receipt agrees with the claim.',
+        prediction: {
+          id: 'artifact.tilelang.receipt_prediction',
+          prompt:
+            'Before reveal, what do you most want the lowered code to prove: that the tile plan survived, that the overlap happened, or that the performance claim is tied to one concrete config?',
+          placeholder: 'Write the proof obligation you expect the receipt to satisfy.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'python',
+            body: `@tilelang.autotune(configs=matmul_configs, warmup=25, rep=100, timeout=60)
+@tilelang.jit(out_idx=[-1])
+def matmul(
+    M: int,
+    N: int,
+    K: int,
+    block_M: int = 128,
+    block_N: int = 128,
+    block_K: int = 32,
+    threads: int = 128,
+    num_stages: int = 3,
+    dtype: str = 'float16',
+    accum_dtype: str = 'float32',
+):
+    @T.prim_func
+    def kernel(A: T.Tensor((M, K), dtype),
+               B: T.Tensor((K, N), dtype),
+               C: T.Tensor((M, N), dtype)):
+        with T.Kernel(T.ceildiv(N, block_N), T.ceildiv(M, block_M), threads=threads) as (bx, by):
+            ...
+    return kernel`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'The autotuner explores configuration space, validates correctness, benchmarks candidates, and caches the winner for reuse. The receipt is not just “faster on this run”; it is the combination of config, shape, hardware, and lowered code that explains why a specific schedule won here.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'The schedule is a claim about hardware and shape, not a prayer. If the lowered code or the benchmark receipt disagrees, the receipt wins. That is what keeps the forge honest.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'evidence',
+        id: 'schedule-receipt',
+        title: 'Source, lowering, and receipt belong together',
+        caption:
+          'A TileLang tuning story is only complete when the source claim, config, lowered behavior, and receipt all travel together.',
+        rows: [
+          ['source claim', 'block_M, block_N, block_K, stages, threads'],
+          ['lowered behavior', 'copy, gemm, pipeline, store'],
+          ['receipt', 'benchmark or profiler evidence on one GPU and shape'],
+          ['what it proves', 'this schedule claim on this hardware, not a universal law']
+        ]
+      },
+      {
+        type: 'reviewSet',
+        title: 'Generated code and tuning receipts',
+        intro: 'These cards stop the schedule from becoming a superstition.',
+        feedback:
+          'If this was missed, separate the authored plan from the lowered execution and from the benchmark receipt. They are related, but they are not the same thing.',
+        cards: [
+          {
+            id: 'tilelang.receipt.generated_code',
+            prompt: 'Why inspect generated code in a TileLang workflow?',
+            answer: 'To verify that the compiler actually honored the intended tile and schedule story after lowering.'
+          },
+          {
+            id: 'tilelang.receipt.autotuner',
+            prompt: 'What does the TileLang autotuner do at a high level?',
+            answer: 'It searches a configuration space, compiles candidates, validates correctness, benchmarks them, and keeps the best result for reuse.'
+          },
+          {
+            id: 'tilelang.receipt.must_travel',
+            prompt: 'What must travel with a tuning claim for it to be readable later?',
+            answer: 'Version, GPU model, input shape, configuration values, timing method, and ideally the lowered code or profiler context.'
+          },
+          {
+            id: 'tilelang.receipt.transfer_gpu',
+            kind: 'transfer',
+            prompt: 'If one TileLang config wins on one GPU but loses on another, what should you suspect first?',
+            answer: 'Architecture-specific resource tradeoffs or memory-system behavior, not a universal tuning law.'
+          },
+          {
+            id: 'tilelang.receipt.integrating_lens',
+            kind: 'integrating',
+            prompt: 'What new lens should you have after the TileLang essay?',
+            answer:
+              'You should be able to separate the authored tile plan, the lowered execution path, and the benchmark receipt that proves the claim.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now treat TileLang as authorship of a machine contract: a tile plan in source, a lowered path in generated code, and a receipt that proves the claim on a particular GPU and shape. That is what makes the forge useful. It turns schedule from hidden labor into an inspectable decision.'
       }
     ]
   }
