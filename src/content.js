@@ -29,6 +29,51 @@ export const seriesNavigation = [
 
 export const reviewIntervals = ['in-text', '5 days', '2 weeks', '1 month', '2 months', 'long-term'];
 
+export const tilelangLabs = [
+  {
+    id: 'tilelang-lab-01',
+    title: 'Lab 1: First kernel and generated source',
+    purpose:
+      'Turn the first TileLang kernel into a concrete ownership exercise: predict the slice, run or inspect the kernel, and recover the same ownership in the generated source.',
+    prediction:
+      'Before looking at evidence, write which element range one program instance owns and how the final partial tile stays legal.',
+    gpuPath:
+      'Run the minimal add kernel, dump the generated CUDA/TIR, and annotate the launch axis, inner parallel loop, edge guard, and output store.',
+    fallback:
+      'Without a GPU, use the provided source sketch and lowered-code excerpt as a static receipt; still annotate ownership and the edge guard before reading the reference explanation.',
+    receipt:
+      'A correct lab note names the owned slice, identifies the guard, and explains which part of generated code corresponds to the TileLang source assignment.'
+  },
+  {
+    id: 'tilelang-lab-02',
+    title: 'Lab 2: GEMM tile anatomy',
+    purpose:
+      'Make `block_M`, `block_N`, and `block_K` visible as C ownership, A/B shared tiles, and repeated K phases.',
+    prediction:
+      'Before running or revealing the reference, predict the shapes of A_s, B_s, and C_f for one config and the number of K phases.',
+    gpuPath:
+      'Run one GEMM config, check correctness against a framework reference, dump the generated source, and mark global-to-shared copies, fragment accumulation, and final store.',
+    fallback:
+      'Without a GPU, inspect the reference receipt excerpt and fill the same tile table: C owner, A slice, B slice, K phase count, and output store.',
+    receipt:
+      'A correct lab note separates tile ownership from storage scope: C tile ownership stays fixed while the K slice advances.'
+  },
+  {
+    id: 'tilelang-lab-03',
+    title: 'Lab 3: Schedule receipt inspection',
+    purpose:
+      'Practice the three-receipt discipline: generated code for schedule fidelity, reference output for correctness, and benchmark or profiler data for performance.',
+    prediction:
+      'Before reading the winner, predict whether changing `num_stages` or `block_K` should help, hurt, or depend on hardware and shape.',
+    gpuPath:
+      'Run a small config sweep, keep the best-config cache, inspect the lowered source for copy/compute/store structure, and record timing with device, shape, dtype, warmup, and repetitions.',
+    fallback:
+      'Without a GPU, compare two reference receipts and decide which claim each one can support: lowering fidelity, correctness, or performance.',
+    receipt:
+      'A correct lab note refuses to let a fast benchmark prove lowering fidelity or a faithful lowering prove speed.'
+  }
+];
+
 export const essays = [
   {
     slug: 'cuda',
@@ -1960,6 +2005,11 @@ performance receipt:
         type: 'paragraph',
         text:
           'You can now treat TileLang as authorship of a machine contract: a tile plan in source, a lowered path in generated code, and a receipt that proves the claim on a particular GPU and shape. That is what makes the forge useful. It turns schedule from hidden labor into an inspectable decision.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'A shorter lab track lives at `#/tilelang/labs`. It turns the same ideas into three exercises: first-kernel ownership, GEMM tile anatomy, and schedule receipt inspection.'
       }
     ]
   }
@@ -2244,6 +2294,11 @@ function addCudaInlineFigures() {
 
 export function getEssay(slug) {
   return essays.find((essay) => essay.slug === slug) ?? essays.find((essay) => essay.slug === primaryEssaySlug);
+}
+
+export function getLabs(topic) {
+  if (topic === 'tilelang') return tilelangLabs;
+  return [];
 }
 
 export function normalizeCards(section) {

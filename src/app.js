@@ -2,6 +2,7 @@ import {
   essays,
   getAllCards,
   getEssay,
+  getLabs,
   normalizeCards,
   primaryEssaySlug,
   reviewIntervals,
@@ -34,6 +35,7 @@ function nav(route) {
       <a class="brand" href="#/">Kernel Garden</a>
       <nav class="toplinks" aria-label="Primary navigation">
         <a class="${route.kind === 'essay' ? 'active' : ''}" href="#/">Essay</a>
+        <a class="${route.kind === 'labs' ? 'active' : ''}" href="#/tilelang/labs">Labs</a>
         <a class="${route.kind === 'review' ? 'active' : ''}" href="#/review">Review</a>
       </nav>
     </header>
@@ -300,6 +302,57 @@ function renderReviewCard(card) {
   `;
 }
 
+function renderLabs(topic) {
+  const labs = getLabs(topic);
+  const route = { kind: 'labs', topic };
+  shell(
+    route,
+    `
+      <main class="labs-page">
+        <article class="labs-body">
+          <header class="essay-header compact">
+            <p class="eyebrow">tilelang labs</p>
+            <h1>Practice the forge.</h1>
+            <p class="subtitle">Three short labs pair a prediction, a GPU path, a no-GPU fallback, and a receipt.</p>
+            <p class="deck-description">The labs are deliberately smaller than the essay. Each one asks for one observable claim, one inspection path, and one written conclusion.</p>
+          </header>
+          <div class="lab-list">
+            ${labs.map(renderLabCard).join('')}
+          </div>
+        </article>
+      </main>
+    `
+  );
+}
+
+function renderLabCard(lab, index) {
+  return `
+    <section class="lab-card" id="${escapeHtml(lab.id)}">
+      <p class="review-label">lab ${index + 1}</p>
+      <h2>${escapeHtml(lab.title)}</h2>
+      <p>${escapeHtml(lab.purpose)}</p>
+      <div class="lab-grid">
+        <div>
+          <h3>Prediction</h3>
+          <p>${formatInline(lab.prediction)}</p>
+        </div>
+        <div>
+          <h3>GPU path</h3>
+          <p>${formatInline(lab.gpuPath)}</p>
+        </div>
+        <div>
+          <h3>No-GPU fallback</h3>
+          <p>${formatInline(lab.fallback)}</p>
+        </div>
+        <div>
+          <h3>Receipt</h3>
+          <p>${formatInline(lab.receipt)}</p>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function handleClick(event) {
   const button = event.target.closest('button');
   if (!button) return;
@@ -422,6 +475,7 @@ function revealArtifactEvidence(button) {
 function renderRoute() {
   const route = resolveRoute(window.location.hash, primaryEssaySlug);
   if (route.kind === 'review') renderReview();
+  else if (route.kind === 'labs') renderLabs(route.topic);
   else renderEssay(route.slug);
 }
 
