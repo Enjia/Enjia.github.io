@@ -132,7 +132,7 @@ function renderComingSoon(slug) {
             <h1>${escapeHtml(entry.title)}</h1>
             <p class="subtitle">${escapeHtml(entry.subtitle)}</p>
           </header>
-          <p>This essay is part of the series. The current prototype now includes the first two CUDA essays, and the remaining planned essays will follow the same mnemonic-medium structure.</p>
+          <p>This essay is part of the series. The current prototype now includes the first three CUDA essays, and the remaining planned essays will follow the same mnemonic-medium structure.</p>
         </article>
         ${sidebar(slug)}
       </main>

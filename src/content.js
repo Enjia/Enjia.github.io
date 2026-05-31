@@ -17,7 +17,7 @@ export const seriesNavigation = [
     slug: 'compiler',
     title: 'The Tensor Mill',
     subtitle: 'A tour through tensor IR, lowering, and schedules',
-    status: 'planned'
+    status: 'published essay'
   },
   {
     slug: 'tilelang',
@@ -1038,6 +1038,43 @@ int col = block_col + threadIdx.x;`
         ]
       },
       {
+        type: 'artifact',
+        label: 'benchmark receipt',
+        title: 'Artifact 4: a tile-size claim needs a receipt',
+        caption:
+          'The official CUDA best-practices guide reports concrete V100 bandwidth numbers for the shared-memory matmul example. That is evidence for the mechanism, not a universal law about every tile size.',
+        unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
+        prediction: {
+          id: 'artifact.matmul_measurement.receipt_prediction',
+          prompt:
+            'Before seeing the reported numbers, which variant would you expect to win: no shared memory, shared memory for A, or shared memory to eliminate redundant B reads? Explain your guess in one sentence.',
+          placeholder: 'Predict the ranking and the mechanism you expect to explain it.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'text',
+            body: `Official NVIDIA matmul example on a Tesla V100:
+No optimization: 119.9 GB/s
+Shared memory for a tile of A: 144.4 GB/s
+Shared memory to eliminate redundant reads of a tile of B: 195.5 GB/s`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'The official guide uses these numbers to show that shared memory can raise effective bandwidth by removing redundant global transfers in a tiled matmul example. The guide also warns that this is an example-specific result, not a blanket rule for every kernel or GPU.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'This is strong evidence that the mechanism is real for the documented kernel and hardware. It is not yet a local benchmark for your own tile-size choice, because a tile-size search still needs its own receipt: matrix sizes, GPU model, synchronization method, and profiler context.'
+          }
+        ]
+      },
+      {
         type: 'reviewSet',
         title: 'Tile size and measurement',
         intro: 'The final cards keep tile size from turning into superstition.',
@@ -1097,6 +1134,406 @@ int col = block_col + threadIdx.x;`
         type: 'paragraph',
         text:
           'Tiling is not an optimization trick. It is a way of reshaping data movement. The same arithmetic becomes faster because the machine is asked to move and reuse data in a more coherent pattern.'
+      }
+    ]
+  },
+  {
+    slug: 'compiler',
+    title: 'The Tensor Mill',
+    subtitle: 'A compiler essay about expressions, lowering, and schedules',
+    author: 'Mnemonic Medium Lab',
+    deckDescription:
+      'A discovery-style tensor-programming essay about expressions, IR, lowering, and bufferization. The goal is to make compiler transformations feel like visible changes in meaning, storage, and iteration.',
+    sections: [
+      {
+        type: 'paragraph',
+        kicker: 'Opening question',
+        text:
+          'The same matmul can appear as a math expression, a tensor IR op, a loop nest, a buffered program, or a GPU sketch. Why does the compiler need that many faces if the arithmetic never changes?'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'The short answer is that different faces preserve different truths. A tensor expression preserves meaning. A structured IR preserves iteration and reuse opportunities. Bufferization chooses storage. Lowering chooses where the work will actually run. The compiler is not trying to erase the original computation; it is trying to keep the useful structure visible for as long as possible.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'This essay starts with the same matmul you saw in The Tile Loom, but it reads it from the compiler side. We will ask what a tensor value means, how IR records that meaning, when bufferization turns value semantics into storage semantics, and how lowering keeps the schedule explicit enough to optimize.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'Keep three questions nearby. What does the tensor value mean? What structure is still visible in IR? What storage or schedule choice finally changes the machine behavior?'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Tensor semantics basics',
+        intro: 'These cards keep tensor meaning separate from physical storage.',
+        feedback:
+          'If this felt fuzzy, remember that a tensor value is a semantic object first. Its layout and storage plan are not the same thing as the value itself.',
+        cards: [
+          {
+            id: 'compiler.tensor.value_semantics',
+            prompt: 'What is the first thing a tensor value represents in a modern tensor compiler: meaning or physical storage?',
+            answer: 'Meaning. The value tells you what the tensor denotes before any specific buffer layout is chosen.'
+          },
+          {
+            id: 'compiler.tensor.shape_rank',
+            prompt: 'What do shape and rank tell you about a tensor?',
+            answer: 'Shape describes the extents of each dimension, and rank is the number of dimensions.'
+          },
+          {
+            id: 'compiler.tensor.layout_not_semantics',
+            prompt: 'Is row-major layout the same thing as tensor semantics?',
+            answer: 'No. Row-major is one possible physical layout; the tensor meaning is independent of that choice.'
+          },
+          {
+            id: 'compiler.tensor.transfer_broadcast',
+            kind: 'transfer',
+            prompt: 'If two different memory layouts can represent the same tensor expression, what should you infer about the layout?',
+            answer: 'That layout is a physical choice, not the tensor expression itself.'
+          },
+          {
+            id: 'compiler.tensor.debug_shape_bug',
+            kind: 'debugging',
+            prompt: 'A tensor expression has the wrong output shape after a transformation. What should you suspect before blaming code generation?',
+            answer: 'A broken shape or indexing transformation, not necessarily a codegen bug.'
+          }
+        ]
+      },
+      {
+        type: 'artifact',
+        label: 'code lens + prediction',
+        title: 'Artifact 1: the same matmul has five faces',
+        caption:
+          'The compiler must preserve one meaning while making more of the machine visible. That is why the same computation shows up in several representations.',
+        unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
+        prediction: {
+          id: 'artifact.compiler.five_faces_prediction',
+          prompt:
+            'Before revealing the pipeline, which representation do you expect to be best for semantics, and which one do you expect to be best for locality tuning?',
+          placeholder: 'Predict which face keeps meaning best and which face exposes the most optimization opportunity.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'text',
+            body: `matmul:
+  C = A @ B
+
+toy tensor IR:
+  %c = linalg.matmul ins(%a, %b : tensor<MxKxf32>, tensor<KxNxf32>)
+                     outs(%c0 : tensor<MxNxf32>)`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'A math expression preserves meaning best. A structured tensor op preserves more of the iteration structure the compiler needs for tiling and fusion. A loop nest exposes locality. A GPU sketch exposes mapping and storage choices.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'The compiler needs multiple faces because no single face simultaneously preserves semantics, exposes iteration structure, and commits to a storage plan. Each lowering step keeps some information and makes other information explicit.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'machine view',
+        id: 'tensor-faces-map',
+        title: 'One computation, five readable faces',
+        caption:
+          'The point is not that one representation is better in every situation. The point is that each one makes a different part of the machine visible.',
+        rows: [
+          ['math', 'preserves meaning'],
+          ['tensor IR', 'preserves value semantics and structure'],
+          ['structured op', 'preserves iteration pattern'],
+          ['loop nest', 'exposes locality and order'],
+          ['GPU sketch', 'shows mapping and storage']
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now read a compiler pipeline as a sequence of visibility changes. The first job is not to optimize; it is to stop hiding the structure you still need later.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'IR and SSA',
+        intro: 'These cards keep the source language and the compiler IR apart.',
+        feedback:
+          'If this was missed, remember that SSA values are not reassigned. IR is there to make structure explicit enough to transform.',
+        cards: [
+          {
+            id: 'compiler.ir.ast_vs_ir',
+            prompt: 'Why does a compiler often prefer IR over raw AST for optimization?',
+            answer: 'IR is usually closer to the transformations the compiler wants to perform, and it makes analysis and rewriting easier.'
+          },
+          {
+            id: 'compiler.ir.ssa_basic',
+            prompt: 'What does SSA mean at a high level?',
+            answer: 'Each value is assigned once, which makes dependencies and data flow easier to reason about.'
+          },
+          {
+            id: 'compiler.ir.op_result',
+            prompt: 'In a small IR, what does an operation usually have that a source expression may hide?',
+            answer: 'Explicit operands, results, types, and often attributes that a compiler can inspect and transform.'
+          },
+          {
+            id: 'compiler.ir.transfer_violation',
+            kind: 'transfer',
+            prompt: 'If a value appears to be reassigned in an SSA IR, what should you suspect?',
+            answer: 'Either you are not reading SSA correctly or the IR is malformed; SSA values themselves should not be reassigned.'
+          },
+          {
+            id: 'compiler.ir.debug_missing_type',
+            kind: 'debugging',
+            prompt: 'A transformation loses track of a result shape. What part of the IR should you inspect first?',
+            answer: 'The op, its result type, and any shape or attribute information the pass needs to preserve.'
+          }
+        ]
+      },
+      {
+        type: 'artifact',
+        label: 'code lens + prediction',
+        title: 'Artifact 2: bufferization changes the storage contract',
+        caption:
+          'Tensor semantics and storage semantics are not the same thing. Bufferization is where the compiler decides how values will live in memory while trying to preserve meaning.',
+        unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
+        prediction: {
+          id: 'artifact.compiler.bufferization_prediction',
+          prompt:
+            'Before reveal, what do you expect bufferization to preserve, and what do you expect it to choose?',
+          placeholder: 'Predict which parts of the computation stay semantic and which parts become storage decisions.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'text',
+            body: `%t0 = tensor.empty() : tensor<MxNxf32>
+%t1 = linalg.matmul ins(%a, %b : tensor<MxKxf32>, tensor<KxNxf32>)
+                     outs(%t0 : tensor<MxNxf32>)`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'Bufferization converts tensor semantics into explicit buffer semantics when the pipeline needs storage. That may reuse an existing destination, or it may insert copies when reuse would be unsafe.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'The arithmetic stays the same, but the compiler now has to pick physical locations and lifetimes. This is the moment where value semantics start to become memory planning.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'machine view',
+        id: 'tensor-buffer-boundary',
+        title: 'Tensor meaning crosses a buffer boundary',
+        caption:
+          'Bufferization is the handoff from semantic value to explicit storage. The compiler keeps the math, but it now has to choose where the values live.',
+        rows: [
+          ['before bufferization', 'tensor values and SSA flow'],
+          ['boundary', 'storage plan is chosen'],
+          ['after bufferization', 'memrefs and explicit loads/stores'],
+          ['risk', 'copies if reuse is unsafe']
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now separate tensor meaning from buffer placement. That separation is the reason compilers can optimize a computation without first collapsing it into raw machine instructions.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Bufferization and aliasing',
+        intro: 'These cards keep the storage decision honest.',
+        feedback:
+          'If this was missed, ask which part of the pipeline is choosing memory and which part is still preserving tensor meaning.',
+        cards: [
+          {
+            id: 'compiler.bufferization.to_memref',
+            prompt: 'What does bufferization mainly do at a high level?',
+            answer: 'It converts tensor semantics into explicit buffer semantics so later passes can operate on memory.'
+          },
+          {
+            id: 'compiler.bufferization.dps',
+            prompt: 'Why does destination-passing style matter for bufferization?',
+            answer: 'Because it gives the compiler an explicit destination buffer to try to reuse instead of always allocating a new one.'
+          },
+          {
+            id: 'compiler.bufferization.copy_insertion',
+            prompt: 'When might bufferization insert a copy?',
+            answer: 'When reusing an existing buffer would be unsafe because of aliasing or lifetime conflicts.'
+          },
+          {
+            id: 'compiler.bufferization.transfer_reuse',
+            kind: 'transfer',
+            prompt: 'If a tensor result already has a safe destination, what should bufferization try first?',
+            answer: 'Reuse the destination buffer if the aliasing and lifetime analysis says it is safe.'
+          },
+          {
+            id: 'compiler.bufferization.debug_alias',
+            kind: 'debugging',
+            prompt: 'A bufferized program has an unexpected copy. What should you inspect before blaming codegen?',
+            answer: 'The destination, aliasing, and lifetime assumptions that determined whether reuse was safe.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'Bufferization is where the compiler starts to spend memory on purpose. The useful question is not “did it lower?” but “what did it choose to keep in place, and what did it choose to move?”'
+      },
+      {
+        type: 'paragraph',
+        kicker: 'Mystery',
+        text:
+          'If bufferization chooses storage, what does lowering still need to decide? The remaining question is how to expose iteration, tiling, and scheduling so that the machine can actually run the plan well.'
+      },
+      {
+        type: 'artifact',
+        label: 'code lens + prediction',
+        title: 'Artifact 3: lowering keeps structure until schedule chooses storage',
+        caption:
+          'Lowering is not a single magic step. It is a sequence of increasingly concrete choices that preserve meaning until they must commit to loops, memory, and mapping.',
+        unitPattern: ['phenomenon', 'code', 'prediction', 'machine view', 'evidence', 'memory trace'],
+        prediction: {
+          id: 'artifact.compiler.lowering_prediction',
+          prompt:
+            'Before reveal, which information do you expect to survive longest through lowering: tensor meaning, iteration structure, or physical storage details?',
+          placeholder: 'Predict what stays visible longest and what becomes explicit first.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'text',
+            body: `tensor IR -> structured op -> loop nest -> bufferized loads/stores -> GPU mapping`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'Lowering keeps the meaning longest, then exposes iteration structure, then commits to storage and mapping. Tiling, fusion, vectorization, and GPU mapping are schedule choices that become meaningful only because the earlier structure still exists.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'The compiler is choosing where the computation will happen and what data movement it will require, but it should not have to invent the computation from scratch. Lowering is where schedule becomes concrete while semantics are still recoverable.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'machine view',
+        id: 'lowering-pipeline-map',
+        title: 'Lowering is a visibility pipeline',
+        caption:
+          'Each stage makes a different part of the machine more explicit. The point is not to erase structure too early.',
+        rows: [
+          ['tensor op', 'semantic value'],
+          ['structured op', 'iteration and reuse'],
+          ['loops', 'ordering and locality'],
+          ['buffers', 'storage and lifetime'],
+          ['GPU mapping', 'blocks, threads, and memory movement']
+        ]
+      },
+      {
+        type: 'reviewSet',
+        title: 'Structured ops and indexing maps',
+        intro: 'These cards keep the iteration space visible before the schedule turns concrete.',
+        feedback:
+          'If this was missed, focus on the indexing pattern. A structured op is about what indices read what inputs, not just about how the source line looks.',
+        cards: [
+          {
+            id: 'compiler.indexing.parallel_vs_reduction',
+            prompt: 'In a structured matmul-like op, what is the role of the reduction dimension?',
+            answer: 'It is the dimension that accumulates partial results rather than producing an output element directly.'
+          },
+          {
+            id: 'compiler.indexing_map_basic',
+            prompt: 'Why are indexing maps useful in a tensor compiler?',
+            answer: 'They describe how iteration space maps to operand accesses, which helps the compiler reason about structure and tiling.'
+          },
+          {
+            id: 'compiler.indexing_map_transform',
+            prompt: 'What should happen when you change an indexing map?',
+            answer: 'The access pattern or semantics of the structured op should change in a controlled, explicit way.'
+          },
+          {
+            id: 'compiler.indexing.transfer_transpose',
+            kind: 'transfer',
+            prompt: 'If an op becomes a transpose-like access pattern after lowering, what information was already present in the structured form?',
+            answer: 'The access pattern over indices; lowering made it explicit rather than inventing it.'
+          },
+          {
+            id: 'compiler.indexing.debug_wrong_reduction',
+            kind: 'debugging',
+            prompt: 'A structured matmul lowers with the wrong accumulation order. What should you inspect first?',
+            answer: 'The reduction dimension, indexing map, and any pass that may have changed iteration structure.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now read lowering as a series of increasingly concrete commitments. The useful structure survives long enough for tiling and schedule choices to act on it.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Schedule vs semantics',
+        intro: 'These cards stop schedule from being confused with meaning.',
+        feedback:
+          'If this was missed, separate what the program means from where and how the compiler decides to run it.',
+        cards: [
+          {
+            id: 'compiler.schedule_vs_semantics.basic',
+            prompt: 'What is the difference between schedule and semantics in a tensor compiler?',
+            answer: 'Semantics describe what the computation means; schedule describes how the compiler arranges it for execution.'
+          },
+          {
+            id: 'compiler.schedule_vs_semantics.tiling',
+            prompt: 'Why is tiling usually a schedule decision rather than a semantic change?',
+            answer: 'Because tiling changes how work is arranged and reused, not what mathematical result the computation should produce.'
+          },
+          {
+            id: 'compiler.schedule_vs_semantics.cost_model',
+            prompt: 'What does a cost model help the compiler choose?',
+            answer: 'Which schedule or lowering choice is likely to be best for a given hardware and problem shape.'
+          },
+          {
+            id: 'compiler.schedule.transfer_tile_loom',
+            kind: 'transfer',
+            prompt: 'How does the compiler essay connect to The Tile Loom?',
+            answer: 'The compiler exposes the tile and reuse structure that The Tile Loom already made physically visible in CUDA.'
+          },
+          {
+            id: 'compiler.schedule.integrating_lens',
+            kind: 'integrating',
+            prompt: 'What new lens should you have after reading the compiler essay?',
+            answer: 'You should be able to separate tensor meaning from buffer placement and schedule choices.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'The Tensor Mill is the point where the matmul story changes from hardware intuition to transformation intuition. The same reuse structure still matters, but now the question is how a compiler preserves it while turning it into a concrete execution plan.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now separate tensor meaning from buffer placement and schedule choice. Once that split is visible, compiler passes stop feeling like black-box magic and start feeling like a disciplined sequence of visibility changes.'
       }
     ]
   }
