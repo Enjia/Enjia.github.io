@@ -30,12 +30,16 @@ function formatInline(value) {
 }
 
 function nav(route) {
+  const labsHref =
+    (route.kind === 'essay' && route.slug === 'compiler') || (route.kind === 'labs' && route.topic === 'compiler')
+      ? '#/compiler/labs'
+      : '#/tilelang/labs';
   return `
     <header class="topbar">
       <a class="brand" href="#/">Kernel Garden</a>
       <nav class="toplinks" aria-label="Primary navigation">
         <a class="${route.kind === 'essay' ? 'active' : ''}" href="#/">Essay</a>
-        <a class="${route.kind === 'labs' ? 'active' : ''}" href="#/tilelang/labs">Labs</a>
+        <a class="${route.kind === 'labs' ? 'active' : ''}" href="${labsHref}">Labs</a>
         <a class="${route.kind === 'review' ? 'active' : ''}" href="#/review">Review</a>
       </nav>
     </header>
@@ -304,6 +308,15 @@ function renderReviewCard(card) {
 
 function renderLabs(topic) {
   const labs = getLabs(topic);
+  const isCompiler = topic === 'compiler';
+  const eyebrow = isCompiler ? 'mlir compiler labs' : 'tilelang labs';
+  const title = isCompiler ? 'Inspect the mill.' : 'Practice the forge.';
+  const subtitle = isCompiler
+    ? 'Three short labs separate IR receipts, bufferization receipts, lowering receipts, and runtime receipts.'
+    : 'Three short labs pair a prediction, a GPU path, a no-GPU fallback, and a receipt.';
+  const description = isCompiler
+    ? 'The compiler labs train the same habit as the essays: name the claim first, then inspect the artifact that can actually prove it.'
+    : 'The labs are deliberately smaller than the essay. Each one asks for one observable claim, one inspection path, and one written conclusion.';
   const route = { kind: 'labs', topic };
   shell(
     route,
@@ -311,10 +324,10 @@ function renderLabs(topic) {
       <main class="labs-page">
         <article class="labs-body">
           <header class="essay-header compact">
-            <p class="eyebrow">tilelang labs</p>
-            <h1>Practice the forge.</h1>
-            <p class="subtitle">Three short labs pair a prediction, a GPU path, a no-GPU fallback, and a receipt.</p>
-            <p class="deck-description">The labs are deliberately smaller than the essay. Each one asks for one observable claim, one inspection path, and one written conclusion.</p>
+            <p class="eyebrow">${escapeHtml(eyebrow)}</p>
+            <h1>${escapeHtml(title)}</h1>
+            <p class="subtitle">${escapeHtml(subtitle)}</p>
+            <p class="deck-description">${escapeHtml(description)}</p>
           </header>
           <div class="lab-list">
             ${labs.map(renderLabCard).join('')}

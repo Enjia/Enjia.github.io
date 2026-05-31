@@ -74,6 +74,51 @@ export const tilelangLabs = [
   }
 ];
 
+export const compilerLabs = [
+  {
+    id: 'compiler-lab-01',
+    title: 'Lab 1: MLIR matmul in four receipts',
+    purpose:
+      'Read one matmul through MLIR value semantics, structured linalg, bufferization, and lowered control flow without treating any stage as magic.',
+    prediction:
+      'Before reveal, predict which part of the pipeline proves tensor meaning, which part proves storage choice, and which part proves executable control flow.',
+    gpuPath:
+      'Run or inspect a small `mlir-opt` pipeline, saving the input IR, the linalg structured op, the bufferized memref form, and the loop or GPU form as separate receipts.',
+    fallback:
+      'Without a local MLIR build, compare the provided IR excerpts and label which one is an IR receipt, bufferization receipt, conversion receipt, or runtime receipt.',
+    receipt:
+      'A correct lab note refuses to let one pass output prove every claim; each IR stage proves only the structure visible at that stage.'
+  },
+  {
+    id: 'compiler-lab-02',
+    title: 'Lab 2: Bufferization boundary',
+    purpose:
+      'Make the moment from tensor values to explicit buffers visible, including destination-passing style and copy risk.',
+    prediction:
+      'Before reveal, predict whether the destination buffer can be reused safely, and name one aliasing or lifetime fact that would force a copy.',
+    gpuPath:
+      'Run one-shot bufferization on a destination-style linalg example and inspect where tensors become memrefs, where loads/stores appear, and whether copies are inserted.',
+    fallback:
+      'Without MLIR locally, read the before/after excerpt and mark the destination, the first explicit memref, and the place where storage semantics replace value semantics.',
+    receipt:
+      'A bufferization receipt is the before/after IR pair that shows which tensor values became buffers and why copies were or were not required.'
+  },
+  {
+    id: 'compiler-lab-03',
+    title: 'Lab 3: Lowering and runtime claim scope',
+    purpose:
+      'Separate lowering fidelity, correctness, and performance in a compiler pipeline the same way the TileLang labs separate generated code, reference checks, and benchmark receipts.',
+    prediction:
+      'Before reveal, predict which receipt would catch a wrong indexing map, which would catch an incorrect numeric result, and which would support a speed claim.',
+    gpuPath:
+      'Inspect a lowering pipeline from linalg or scf toward GPU/LLVM form, then pair it with a reference-output check and a timing/profiler note if a runtime is available.',
+    fallback:
+      'Without a runtime, classify three static artifacts: an IR diff, a reference-output note, and a timing table. State which claim each artifact can and cannot prove.',
+    receipt:
+      'A lowering lab receipt names the pass output for structure, the reference check for correctness, and the benchmark or profiler note for performance.'
+  }
+];
+
 export const essays = [
   {
     slug: 'cuda',
@@ -1583,6 +1628,115 @@ GPU-mapping view:
       },
       {
         type: 'paragraph',
+        kicker: 'Mystery',
+        text:
+          'MLIR makes this split concrete because every pass leaves a receipt. A tensor op can prove meaning, a linalg op can expose iteration, bufferization can prove storage choices, and dialect conversion can prove what kind of executable structure is being formed.'
+      },
+      {
+        type: 'artifact',
+        label: 'MLIR bridge',
+        title: 'Artifact 4: an MLIR bridge needs pass receipts',
+        caption:
+          'A compiler pipeline is easier to trust when each stage proves only the claim it is responsible for.',
+        prediction: {
+          id: 'artifact.compiler.mlir_receipt_prediction',
+          prompt:
+            'Before reveal, which receipt would you ask for to prove each claim: tensor meaning, storage choice, executable control flow, and runtime performance?',
+          placeholder: 'Name the receipt you would inspect for each claim before revealing the MLIR bridge.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'mlir',
+            body: `%init = tensor.empty() : tensor<128x128xf32>
+%c = linalg.matmul
+  ins(%a, %b : tensor<128x64xf32>, tensor<64x128xf32>)
+  outs(%init : tensor<128x128xf32>)
+  -> tensor<128x128xf32>`
+          },
+          {
+            kind: 'evidence',
+            label: 'Pass receipts',
+            language: 'text',
+            body: `IR receipt:
+  linalg.matmul keeps the structured op, operand types, result type,
+  indexing maps, and parallel/reduction iterator roles inspectable.
+
+bufferization receipt:
+  mlir-opt -one-shot-bufferize ...
+  tensor<...> values become memref<...> buffers.
+  destination-style outs(...) gives the analysis a candidate output buffer.
+
+conversion receipt:
+  mlir-opt -convert-linalg-to-loops -convert-scf-to-cf ...
+  structured iteration becomes explicit loops and control flow.
+  A GPU path may instead preserve mapping with gpu.launch before later lowering.
+
+runtime receipt:
+  reference check proves the numeric result.
+  benchmark or profiler data proves only a performance claim for this shape,
+  hardware, pass pipeline, and runtime configuration.`
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'Keep the receipts separate. An IR diff can prove that a pass preserved or exposed structure. A bufferization diff can prove storage choices. A reference run can prove correctness. A benchmark can support performance. No single receipt proves the whole compiler story.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'evidence',
+        id: 'mlir-pass-receipts',
+        title: 'MLIR pass receipts have claim scopes',
+        caption:
+          'The compiler bridge is strongest when each artifact answers one question instead of pretending to answer all of them.',
+        rows: [
+          ['IR receipt', 'what meaning and iteration structure is visible?'],
+          ['bufferization receipt', 'which tensor values became which buffers?'],
+          ['conversion receipt', 'which executable control structure was formed?'],
+          ['runtime receipt', 'did it compute correctly and how fast here?']
+        ]
+      },
+      {
+        type: 'reviewSet',
+        title: 'MLIR bridge receipts',
+        intro: 'These cards keep MLIR pass outputs from being treated as one undifferentiated compiler blob.',
+        feedback:
+          'If this felt fuzzy, name the claim first. Meaning, storage, control flow, correctness, and performance need different evidence.',
+        cards: [
+          {
+            id: 'compiler.mlir.linalg_receipt',
+            prompt: 'What does a `linalg.matmul` IR receipt make inspectable?',
+            answer: 'The structured operation, operand/result types, indexing relationships, and parallel/reduction iterator roles.'
+          },
+          {
+            id: 'compiler.mlir.bufferization_receipt',
+            prompt: 'What claim can a bufferization before/after diff prove?',
+            answer: 'Which tensor values became explicit buffers and whether storage reuse or copies were introduced.'
+          },
+          {
+            id: 'compiler.mlir.conversion_receipt',
+            prompt: 'What does a dialect-conversion receipt usually prove?',
+            answer: 'That one representation was rewritten into a more executable form, such as loops, control flow, GPU mapping, or lower-level dialects.'
+          },
+          {
+            id: 'compiler.mlir.runtime_scope',
+            prompt: 'Why can a benchmark not prove that bufferization was correct?',
+            answer: 'A benchmark supports a performance claim; correctness and storage choices need reference checks and IR/bufferization receipts.'
+          },
+          {
+            id: 'compiler.mlir.transfer_tilelang',
+            kind: 'transfer',
+            prompt: 'How does the MLIR receipt habit transfer to TileLang?',
+            answer: 'In both cases, generated/lowered code proves structure, reference output proves correctness, and benchmark/profiler data supports performance.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
         text:
           'The Tensor Mill is the point where the matmul story changes from hardware intuition to transformation intuition. The same reuse structure still matters, but now the question is how a compiler preserves it while turning it into a concrete execution plan.'
       },
@@ -1590,6 +1744,11 @@ GPU-mapping view:
         type: 'paragraph',
         text:
           'You can now separate tensor meaning from buffer placement and schedule choice. Once that split is visible, compiler passes stop feeling like black-box magic and start feeling like a disciplined sequence of visibility changes.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'A short MLIR lab track lives at `#/compiler/labs`. It turns this bridge into three exercises: pass receipts, bufferization boundaries, and lowering claim scope.'
       }
     ]
   },
@@ -2298,6 +2457,7 @@ export function getEssay(slug) {
 
 export function getLabs(topic) {
   if (topic === 'tilelang') return tilelangLabs;
+  if (topic === 'compiler') return compilerLabs;
   return [];
 }
 
