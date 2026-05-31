@@ -20,6 +20,18 @@ export const seriesNavigation = [
     status: 'published essay'
   },
   {
+    slug: 'passes',
+    title: 'The Pass Ledger',
+    subtitle: 'A compiler essay about SSA, dialects, and pass receipts',
+    status: 'published essay'
+  },
+  {
+    slug: 'bufferization',
+    title: 'The Buffer Boundary',
+    subtitle: 'A compiler essay about storage, reuse, and copy insertion',
+    status: 'published essay'
+  },
+  {
     slug: 'tilelang',
     title: 'The TileLang Forge',
     subtitle: 'A TileLang essay about tiles, schedules, and generated code',
@@ -1818,6 +1830,753 @@ runtime receipt:
         type: 'paragraph',
         text:
           'A short MLIR lab track lives at `#/compiler/labs`. It turns this bridge into three exercises: pass receipts, bufferization boundaries, and lowering claim scope.'
+      }
+    ]
+  },
+  {
+    slug: 'passes',
+    title: 'The Pass Ledger',
+    subtitle: 'A compiler essay about SSA, dialects, and pass receipts',
+    author: 'Mnemonic Medium Lab',
+    deckDescription:
+      'A discovery-style compiler essay about SSA values, dialect boundaries, indexing maps, and pass receipts. The goal is to make compiler stages feel like a ledger of claim-specific changes, not a blur of magic transforms.',
+    sections: [
+      {
+        type: 'paragraph',
+        kicker: 'Opening question',
+        text:
+          'What does the compiler actually know when source code says `z = relu(x + y)` or `C = A @ B`? The source line is not yet a compiler plan. It does not show explicit operands, results, types, or the structure that later passes will need in order to transform the computation safely.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'This essay picks up the pieces that The Tensor Mill pointed at but did not expand. We will separate AST from IR, SSA from reassignment, dialect from backend, and indexing map from the source expression that inspired it. The point is not to memorize names. The point is to see which truth each stage keeps visible.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'Different dialects keep different truths visible. A tensor dialect can preserve semantic values. A structured dialect can expose iteration and access relationships. A loop dialect can expose order and locality. A pass receipt is only useful when it proves the claim that stage is actually responsible for.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Expressions and SSA',
+        intro: 'These cards keep source syntax and compiler values separate.',
+        feedback:
+          'If this felt fuzzy, remember that an IR value is not just a variable name. It is a node in a graph of explicit dependencies and results.',
+        cards: [
+          {
+            id: 'compiler.passes.ast_vs_ir',
+            prompt: 'Why is source syntax not yet a compiler plan?',
+            answer: 'Because it usually hides explicit dependencies, types, and transformation-friendly structure.'
+          },
+          {
+            id: 'compiler.passes.ssa_basic',
+            prompt: 'What is the core promise of SSA form?',
+            answer: 'Each value is assigned once, which makes dependencies and data flow explicit.'
+          },
+          {
+            id: 'compiler.passes.op_result',
+            prompt: 'What does a small IR usually make explicit that source syntax may hide?',
+            answer: 'Operands, results, types, and attributes.'
+          },
+          {
+            id: 'compiler.passes.transfer_ssa',
+            kind: 'transfer',
+            prompt: 'If a value appears to be reassigned in SSA, what should you suspect?',
+            answer: 'Either the IR is malformed or you are not reading SSA correctly; SSA values themselves should not be reassigned.'
+          },
+          {
+            id: 'compiler.passes.debug_missing_dep',
+            kind: 'debugging',
+            prompt: 'A pass output loses a dependency. What should you inspect first?',
+            answer: 'The operands, result types, and any attributes that the pass was supposed to preserve.'
+          }
+        ]
+      },
+      {
+        type: 'artifact',
+        label: 'ssa receipt',
+        title: 'Artifact 1: one expression becomes SSA you can inspect',
+        caption:
+          'The first compiler reveal is not optimization. It is that the same computation can be written in a form where each dependency and result is visible.',
+        prediction: {
+          id: 'artifact.passes.ssa_prediction',
+          prompt:
+            'Before reveal, which part of the conversion would you trust for meaning, and which part would you inspect to check dependencies?',
+          placeholder: 'Predict which part keeps meaning and which part exposes explicit dependencies.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'text',
+            body: `source:
+  z = relu(x + y)
+
+toy SSA:
+  %0 = add %x, %y
+  %1 = relu %0
+
+what changed:
+  operands became explicit
+  results became explicit
+  reassignment disappeared`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'The SSA form preserves the computation but makes the dependency graph visible. That is what lets later passes ask concrete questions about use counts, def-use chains, and whether a transformation preserves the same result.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'You can now read a source line as a graph of values rather than as a string of syntax. The compiler did not invent new math; it made the dependencies inspectable enough to transform.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'machine view',
+        id: 'ssa-reading-map',
+        title: 'SSA turns a source line into a value graph',
+        caption:
+          'The point of SSA is not style. It is that dependencies, results, and use sites become readable at a glance.',
+        rows: [
+          ['source', 'one line can hide several dependencies'],
+          ['SSA value', 'one defined result at a time'],
+          ['use site', 'explicit consumers of the value'],
+          ['why it matters', 'later passes can preserve or rewrite the graph carefully']
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now read source syntax as a graph of values rather than as a string of code. That shift matters because the compiler only gets to transform what it can first see.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Dialect boundaries',
+        intro: 'These cards keep one compiler representation from being mistaken for another.',
+        feedback:
+          'If this felt fuzzy, ask which truth each dialect is supposed to preserve. The answer is not the same for every layer.',
+        cards: [
+          {
+            id: 'compiler.passes.dialect_purpose',
+            prompt: 'Why does a compiler use multiple dialects?',
+            answer: 'Because different stages preserve different truths and expose different optimization questions.'
+          },
+          {
+            id: 'compiler.passes.tensor_vs_loop',
+            prompt: 'What usually changes when a tensor dialect becomes a loop dialect?',
+            answer: 'Iteration order, explicit control flow, and the visibility of locality and storage decisions.'
+          },
+          {
+            id: 'compiler.passes.structured_op',
+            prompt: 'What makes a structured op different from a raw loop nest?',
+            answer: 'It keeps the iteration and access structure explicit before the schedule becomes fully concrete.'
+          },
+          {
+            id: 'compiler.passes.transfer_visibility',
+            kind: 'transfer',
+            prompt: 'If a structured op survives a pass, what should you infer about the pass?',
+            answer: 'That the pass preserved the structure that the next stage still needs to see.'
+          },
+          {
+            id: 'compiler.passes.debug_wrong_layer',
+            kind: 'debugging',
+            prompt: 'A transformation seems correct but optimization opportunities disappear. What layer should you inspect?',
+            answer: 'The dialect boundary and the information that may have been erased too early.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        kicker: 'Mystery',
+        text:
+          'If different dialects keep different truths visible, what does a structured tensor op expose that source syntax does not? The answer is the indexing relationship between iteration space and the operands being read or written.'
+      },
+      {
+        type: 'artifact',
+        label: 'structured op receipt',
+        title: 'Artifact 2: dialect changes expose different optimization questions',
+        caption:
+          'A structured op is valuable because it exposes indexing maps and iteration roles before the schedule turns concrete.',
+        prediction: {
+          id: 'artifact.passes.dialect_prediction',
+          prompt:
+            'Before reveal, which form would you inspect for semantics, which for indexing structure, and which for execution order?',
+          placeholder: 'Predict which dialect keeps meaning, which exposes access structure, and which shows execution order.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'text',
+            body: `math:
+  C[i, j] = sum_k A[i, k] * B[k, j]
+
+tensor dialect:
+  %c = tensor.empty() : tensor<MxNxf32>
+  %r = linalg.matmul ins(%a, %b : tensor<MxKxf32>, tensor<KxNxf32>)
+                         outs(%c : tensor<MxNxf32>)
+
+structured op:
+  iterators = [parallel, parallel, reduction]
+  maps = (i, k), (k, j), (i, j)
+
+loop dialect:
+  for i, j, k:
+    C[i, j] += A[i, k] * B[k, j]`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'The same computation now answers different questions at different layers. The math form preserves meaning. The structured form exposes indexing relationships. The loop form exposes order, locality, and schedule options.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'You can now read indexing maps as a claim about who reads what, in what order, and with which reuse opportunities still intact. That is the shape information a compiler needs before it can lower anything safely.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'machine view',
+        id: 'dialect-visibility-stack',
+        title: 'Each dialect keeps a different truth visible',
+        caption:
+          'The stack is not about jargon. It is about which question is still answerable at each stage.',
+        rows: [
+          ['tensor dialect', 'meaning and type'],
+          ['structured op', 'iteration and indexing'],
+          ['loop dialect', 'order and locality'],
+          ['why it matters', 'lowering is safer when you know which truth survives']
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now ask a better question than "what pass ran?" The better question is "what truth did this representation preserve that the next stage still needs?"'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Structured ops and maps',
+        intro: 'These cards keep indexing maps from being treated as decoration.',
+        feedback:
+          'If this felt fuzzy, remember that an indexing map is an explicit description of how iteration space touches operands.',
+        cards: [
+          {
+            id: 'compiler.passes.indexing_map_basic',
+            prompt: 'What does an indexing map describe?',
+            answer: 'How the iteration space maps onto operand accesses.'
+          },
+          {
+            id: 'compiler.passes.indexing_map_matmul',
+            prompt: 'In matmul, which dimension is usually the reduction dimension?',
+            answer: 'K, the accumulated inner dimension.'
+          },
+          {
+            id: 'compiler.passes.indexing_map_transform',
+            prompt: 'What should change when an indexing map changes?',
+            answer: 'The access pattern or semantics of the structured op should change in a controlled way.'
+          },
+          {
+            id: 'compiler.passes.transfer_maps',
+            kind: 'transfer',
+            prompt: 'If you can read a transpose from a structured op, what did the op already encode?',
+            answer: 'The access pattern was already present; the structured form just kept it explicit.'
+          },
+          {
+            id: 'compiler.passes.debug_wrong_reduction',
+            kind: 'debugging',
+            prompt: 'A structured matmul lowers with the wrong accumulation order. What should you inspect first?',
+            answer: 'The reduction dimension, indexing map, and any pass that may have changed iteration structure.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        kicker: 'Mystery',
+        text:
+          'If a pass changes the visible structure, what did it promise to preserve? The answer is the claim scope. Some passes preserve meaning. Others preserve structure while making execution more concrete. Each receipt should say which one it proves.'
+      },
+      {
+        type: 'artifact',
+        label: 'pass receipt',
+        title: 'Artifact 3: a pass receipt needs a claim scope',
+        caption:
+          'A pass receipt is not a universal truth machine. It only proves the claim that stage is supposed to prove.',
+        prediction: {
+          id: 'artifact.passes.receipt_prediction',
+          prompt:
+            'Before reveal, which receipt would you ask for to prove meaning, structure, or execution order?',
+          placeholder: 'Predict which receipt proves meaning, which proves structure, and which proves execution order.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'text',
+            body: `pass ledger:
+  tensor dialect   -> meaning receipt
+  linalg dialect   -> structured receipt
+  bufferization    -> storage receipt
+  scf / cf         -> control-flow receipt
+  gpu / llvm       -> executable receipt`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: `IR receipt:
+  proves what structure is still visible
+
+conversion receipt:
+  proves what control flow or execution form was formed
+
+runtime receipt:
+  proves correctness or performance only for the stated hardware and shape
+
+the important rule:
+  each pass receipt proves only the claim visible at that stage`
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'You can now read the pipeline as a ledger of claims. No single stage should be allowed to prove meaning, storage, execution order, correctness, and performance all at once.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'evidence',
+        id: 'pass-ledger-map',
+        title: 'A pass ledger gives each stage its own receipt',
+        caption:
+          'The compiler becomes easier to trust when every stage states its own claim scope instead of borrowing someone else\'s.',
+        rows: [
+          ['IR receipt', 'meaning and structure visible'],
+          ['conversion receipt', 'executable control flow visible'],
+          ['runtime receipt', 'correctness or performance visible'],
+          ['rule', 'no single receipt proves everything']
+        ]
+      },
+      {
+        type: 'reviewSet',
+        title: 'Pass receipts',
+        intro: 'These cards keep a compiler receipt from being overread.',
+        feedback:
+          'If this felt fuzzy, identify the claim first. The receipt only matters after the claim is named.',
+        cards: [
+          {
+            id: 'compiler.passes.receipt_scope',
+            prompt: 'What should a pass receipt prove first?',
+            answer: 'Only the claim scope that stage is responsible for.'
+          },
+          {
+            id: 'compiler.passes.receipt_runtime',
+            prompt: 'What can a runtime receipt prove that an IR receipt cannot?',
+            answer: 'Observed correctness or performance for a particular run.'
+          },
+          {
+            id: 'compiler.passes.receipt_structure',
+            prompt: 'What can an IR receipt prove that a benchmark cannot?',
+            answer: 'That the expected structure or transformation is still visible.'
+          },
+          {
+            id: 'compiler.passes.transfer_claim_scope',
+            kind: 'transfer',
+            prompt: 'If a fast run disagrees with the expected structure, which receipt wins for structure?',
+            answer: 'The structural receipt wins for structure; the benchmark only speaks to performance.'
+          },
+          {
+            id: 'compiler.passes.integrating_lens',
+            kind: 'integrating',
+            prompt: 'What new lens should you have after reading the pass ledger?',
+            answer: 'You should be able to read compiler stages as claim-specific receipts instead of one big blur.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now read a compiler pipeline as a ledger of claim-specific receipts. Each pass receipt proves only the claim visible at that stage. That makes the transformations less magical and more accountable.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'The next essay will narrow the same idea again, but now the question becomes storage rather than representation: what exactly turns a tensor value into a buffer, and when does the compiler choose to reuse or copy?'
+      }
+    ]
+  },
+  {
+    slug: 'bufferization',
+    title: 'The Buffer Boundary',
+    subtitle: 'A compiler essay about storage, reuse, and copy insertion',
+    author: 'Mnemonic Medium Lab',
+    deckDescription:
+      'A discovery-style compiler essay about bufferization, destination passing, aliasing, and copy insertion. The goal is to make storage choices feel like a visible contract instead of a hidden optimization trick.',
+    sections: [
+      {
+        type: 'paragraph',
+        kicker: 'Opening question',
+        text:
+          'The same tensor math can lead to very different storage stories. One form can reuse an existing destination. Another can allocate new memory. A third can insert a copy because reuse would be unsafe. Bufferization is the pass that decides which of those stories is legal.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'This essay sits between the pass ledger and TileLang. The compiler already knows the computation, the indexing structure, and the stage-specific receipts. Now it has to choose where values live. That choice is not the same thing as the math itself, and it is not the same thing as performance.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'Copy is evidence of a safety constraint, not just wasted work. If the compiler inserts a copy, it is telling you that aliasing, lifetime, or reuse pressure prevented a simpler storage story. The useful question is not "why did it lower?" but "what made reuse unsafe?"'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Tensor values and buffers',
+        intro: 'These cards keep semantic tensors separate from physical storage.',
+        feedback:
+          'If this felt fuzzy, remember that a tensor value says what exists mathematically. A buffer says where that value will live physically.',
+        cards: [
+          {
+            id: 'compiler.bufferization.tensor_semantics',
+            prompt: 'What does a tensor value represent before bufferization?',
+            answer: 'Meaning or value semantics, not a specific physical buffer layout.'
+          },
+          {
+            id: 'compiler.bufferization.memref_semantics',
+            prompt: 'What does a memref or buffer represent?',
+            answer: 'Explicit storage with a concrete layout, lifetime, and addressability.'
+          },
+          {
+            id: 'compiler.bufferization.dps_basic',
+            prompt: 'Why does destination-passing style matter?',
+            answer: 'It gives bufferization an explicit destination it can try to reuse.'
+          },
+          {
+            id: 'compiler.bufferization.transfer_value',
+            kind: 'transfer',
+            prompt: 'If a tensor result already has a safe destination, what should bufferization try first?',
+            answer: 'Reuse the destination buffer if the aliasing and lifetime analysis says it is safe.'
+          },
+          {
+            id: 'compiler.bufferization.debug_storage_choice',
+            kind: 'debugging',
+            prompt: 'A transformation unexpectedly allocates a new buffer. What should you inspect before blaming codegen?',
+            answer: 'The destination, aliasing, and lifetime assumptions that made reuse unsafe.'
+          }
+        ]
+      },
+      {
+        type: 'artifact',
+        label: 'destination receipt',
+        title: 'Artifact 1: destination style offers a legal place to write',
+        caption:
+          'The first bufferization win is that the tensor already names a destination, so the compiler can try to reuse rather than invent memory.',
+        prediction: {
+          id: 'artifact.bufferization.destination_prediction',
+          prompt:
+            'Before reveal, what do you expect destination style to preserve, and what do you expect it to choose?',
+          placeholder: 'Predict which part stays semantic and which part becomes a storage decision.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'text',
+            body: `%init = tensor.empty() : tensor<128x128xf32>
+%out = linalg.matmul
+  ins(%a, %b : tensor<128x64xf32>, tensor<64x128xf32>)
+  outs(%init : tensor<128x128xf32>) -> tensor<128x128xf32>`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'Destination style gives bufferization an explicit candidate destination. That does not force reuse, but it tells the compiler where reuse would be legal if aliasing and lifetime checks agree.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'You can now read the source as a storage contract: the math stays the same, but the compiler can choose whether to write into an existing destination or to introduce new storage.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'machine view',
+        id: 'buffer-destination-map',
+        title: 'Destination passing creates the first storage candidate',
+        caption:
+          'Bufferization is easier to reason about when the destination is named before the pass decides whether it can be reused.',
+        rows: [
+          ['semantic value', 'what the tensor means'],
+          ['destination', 'where a result could be written'],
+          ['reuse check', 'whether aliasing and lifetime allow in-place use'],
+          ['copy risk', 'what appears when reuse is unsafe']
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now separate the mathematical result from the place where it will be stored. That separation is why a bufferization pass can make the program more concrete without changing the math.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'Aliasing and lifetime',
+        intro: 'These cards keep reuse from turning into a guess.',
+        feedback:
+          'If this felt slippery, ask what else still needs the buffer before the current use is finished. That is usually the reason reuse fails.',
+        cards: [
+          {
+            id: 'compiler.bufferization.aliasing_basic',
+            prompt: 'What is aliasing in this context?',
+            answer: 'Multiple names or views referring to overlapping memory that may still be needed elsewhere.'
+          },
+          {
+            id: 'compiler.bufferization.lifetime_basic',
+            prompt: 'Why does lifetime matter for reuse?',
+            answer: 'A buffer can only be reused safely if no later read still depends on its old contents.'
+          },
+          {
+            id: 'compiler.bufferization.copy_receipt',
+            prompt: 'When might bufferization insert a copy?',
+            answer: 'When reusing an existing buffer would be unsafe because of aliasing or lifetime conflicts.'
+          },
+          {
+            id: 'compiler.bufferization.transfer_copy',
+            kind: 'transfer',
+            prompt: 'If a live range still needs a buffer value later, what is bufferization likely to do?',
+            answer: 'Avoid in-place overwrite and either allocate new storage or insert a copy.'
+          },
+          {
+            id: 'compiler.bufferization.debug_overlap',
+            kind: 'debugging',
+            prompt: 'A bufferized program has an unexpected copy. What should you inspect first?',
+            answer: 'The live ranges, aliasing, and destination assumptions that determined whether reuse was safe.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        kicker: 'Mystery',
+        text:
+          'Why does a copy sometimes appear even when the arithmetic did not change? Because bufferization is answering a different question: can this value be overwritten without breaking a future read?'
+      },
+      {
+        type: 'artifact',
+        label: 'copy receipt',
+        title: 'Artifact 2: a copy appears when reuse would be unsafe',
+        caption:
+          'A copy is not the same as a semantic change. It is a safety receipt that says the compiler could not prove in-place reuse was legal.',
+        prediction: {
+          id: 'artifact.bufferization.copy_prediction',
+          prompt:
+            'Before reveal, what should a copy tell you about aliasing or live ranges: bug, safety constraint, or performance verdict?',
+          placeholder: 'Predict why the compiler would copy before seeing the evidence.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'text',
+            body: `before bufferization:
+  %out = linalg.matmul ... outs(%init : tensor<64x64xf32>)
+
+after bufferization, one possible result:
+  %tmp = memref.alloc() : memref<64x64xf32>
+  linalg.matmul ... outs(%tmp : memref<64x64xf32>)
+  memref.copy %tmp, %out : memref<64x64xf32> to memref<64x64xf32>`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: 'The copy appears because reuse was not safe for the current destination story. The pass is not changing the math. It is inserting storage work to preserve correctness under aliasing and lifetime constraints.'
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'You can now read a copy as a safety constraint, not as an accusation. The interesting part is the reason reuse failed, because that reason tells you how storage and live ranges interact.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'machine view',
+        id: 'buffer-live-range-timeline',
+        title: 'A live-range timeline explains why reuse can fail',
+        caption:
+          'Bufferization is easier to debug when you can see which read still depends on the old contents before a write would overwrite them.',
+        rows: [
+          ['producer', 'creates a value or destination'],
+          ['consumer', 'still needs the old contents'],
+          ['overlap', 'reuse becomes unsafe'],
+          ['copy', 'preserves correctness when reuse cannot be proven safe']
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now read an unexpected copy as a clue. It is telling you that some future use, alias, or lifetime made the in-place story unsafe.'
+      },
+      {
+        type: 'reviewSet',
+        title: 'In-place or copy',
+        intro: 'These cards keep the storage decision tied to evidence.',
+        feedback:
+          'If this felt fuzzy, separate the math question from the storage question. Bufferization only answers the latter.',
+        cards: [
+          {
+            id: 'compiler.bufferization.in_place',
+            prompt: 'When is in-place reuse the first thing bufferization should try?',
+            answer: 'When the destination is safe, live ranges do not overlap in a harmful way, and aliasing is acceptable.'
+          },
+          {
+            id: 'compiler.bufferization.copy_as_evidence',
+            prompt: 'What does a copy usually mean in a bufferization receipt?',
+            answer: 'That reuse was not safe to prove for the current destination or live-range story.'
+          },
+          {
+            id: 'compiler.bufferization.storage_not_math',
+            prompt: 'Does a copy imply the math changed?',
+            answer: 'No. It usually means the storage plan changed to preserve correctness.'
+          },
+          {
+            id: 'compiler.bufferization.transfer_storage',
+            kind: 'transfer',
+            prompt: 'If reuse is safe, what should the compiler do before allocating new memory?',
+            answer: 'Prefer in-place reuse of the destination buffer.'
+          },
+          {
+            id: 'compiler.bufferization.debug_copy_reason',
+            kind: 'debugging',
+            prompt: 'A copy appears unexpectedly. What is the best first question?',
+            answer: 'What aliasing or lifetime fact made the destination unsafe to reuse?'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        kicker: 'Mystery',
+        text:
+          'If bufferization can reuse, allocate, or copy, what proves which choice was made for this run? The answer is a receipt. The receipt must separate storage decisions from correctness and performance claims.'
+      },
+      {
+        type: 'artifact',
+        label: 'receipt ledger',
+        title: 'Artifact 3: a bufferization receipt proves storage, not everything',
+        caption:
+          'A bufferization receipt should tell you what storage choice was made and what it does not prove.',
+        prediction: {
+          id: 'artifact.bufferization.receipt_prediction',
+          prompt:
+            'Before reveal, which receipt would you ask for to prove storage choice, correctness, and performance?',
+          placeholder: 'Predict which artifact proves storage, which proves correctness, and which proves performance.'
+        },
+        tabs: [
+          {
+            kind: 'source',
+            label: 'Source view',
+            language: 'text',
+            body: `bufferization receipt set:
+  before/after IR diff
+  reference output
+  benchmark or profiler note`
+          },
+          {
+            kind: 'evidence',
+            label: 'Evidence view',
+            language: 'text',
+            body: `storage receipt:
+  tells you which tensor values became which buffers
+
+correctness receipt:
+  tells you whether the numeric result matched the reference
+
+performance receipt:
+  tells you whether a concrete config was faster on a concrete GPU and shape
+
+the rule:
+  each receipt proves only one claim scope`
+          },
+          {
+            kind: 'interpretation',
+            label: 'Machine reading',
+            language: 'text',
+            body: 'You can now read bufferization as a storage contract. The receipt says which part of the contract was honored, which part was copied, and which claims still need different evidence.'
+          }
+        ]
+      },
+      {
+        type: 'inlineFigure',
+        label: 'evidence',
+        id: 'buffer-receipt-ledger',
+        title: 'Bufferization receipts split storage, correctness, and performance',
+        caption:
+          'The same run can produce several different receipts, and each one should be allowed to prove only its own claim.',
+        rows: [
+          ['storage receipt', 'which tensors became which buffers'],
+          ['correctness receipt', 'did the numbers match a reference'],
+          ['performance receipt', 'was this config faster on this hardware and shape'],
+          ['rule', 'no single receipt proves all three']
+        ]
+      },
+      {
+        type: 'reviewSet',
+        title: 'Receipt scope',
+        intro: 'These cards keep the bufferization receipt from overclaiming.',
+        feedback:
+          'If this felt fuzzy, name the claim first. Then ask which receipt is actually capable of proving it.',
+        cards: [
+          {
+            id: 'compiler.bufferization.receipt_scope',
+            prompt: 'What should a bufferization receipt prove first?',
+            answer: 'Which tensor values became which buffers and why that storage choice was made.'
+          },
+          {
+            id: 'compiler.bufferization.receipt_correctness',
+            prompt: 'What receipt should prove numeric correctness?',
+            answer: 'A reference-output check, not the storage receipt.'
+          },
+          {
+            id: 'compiler.bufferization.receipt_performance',
+            prompt: 'What receipt should prove speed?',
+            answer: 'A benchmark or profiler receipt tied to a concrete hardware and shape.'
+          },
+          {
+            id: 'compiler.bufferization.transfer_receipt',
+            kind: 'transfer',
+            prompt: 'If a bufferization diff looks good, what should you still avoid claiming from it?',
+            answer: 'That the run was faster or numerically correct; the diff only proves storage structure.'
+          },
+          {
+            id: 'compiler.bufferization.integrating_lens',
+            kind: 'integrating',
+            prompt: 'What new lens should you have after reading the buffer boundary essay?',
+            answer: 'You should be able to read a bufferized program as a storage contract instead of a hidden optimization trick.'
+          }
+        ]
+      },
+      {
+        type: 'paragraph',
+        text:
+          'You can now read a bufferized program as a storage contract. The useful questions are whether reuse was legal, whether a copy was necessary, and which receipt proves the claim you actually want to make.'
+      },
+      {
+        type: 'paragraph',
+        text:
+          'The next stop is concrete GPU scheduling. Once storage is explicit, the remaining question is how those buffers are written, tiled, and synchronized on actual hardware.'
       }
     ]
   },

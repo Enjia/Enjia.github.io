@@ -15,6 +15,7 @@ import { createProgressStore } from './storage.js';
 
 const app = document.querySelector('#app');
 const store = createProgressStore();
+const compilerLabEssaySlugs = new Set(['compiler', 'passes', 'bufferization']);
 
 function escapeHtml(value) {
   return String(value)
@@ -31,7 +32,8 @@ function formatInline(value) {
 
 function nav(route) {
   const labsHref =
-    (route.kind === 'essay' && route.slug === 'compiler') || (route.kind === 'labs' && route.topic === 'compiler')
+    (route.kind === 'essay' && compilerLabEssaySlugs.has(route.slug)) ||
+    (route.kind === 'labs' && route.topic === 'compiler')
       ? '#/compiler/labs'
       : '#/tilelang/labs';
   return `
